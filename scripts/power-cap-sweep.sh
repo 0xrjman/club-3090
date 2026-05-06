@@ -10,8 +10,8 @@
 #   commands and bench invocations.
 #
 # Usage:
-#   sudo bash scripts/power-cap-sweep.sh                          # auto-derived sweep (6 steps min→max for the card)
-#   sudo bash scripts/power-cap-sweep.sh --steps 10               # finer granularity (10 evenly-spaced caps)
+#   sudo bash scripts/power-cap-sweep.sh                          # comprehensive sweep at 10W increments (matches @laurimyllari resolution)
+#   sudo bash scripts/power-cap-sweep.sh --step-size 20           # coarser sweep (~half runtime)
 #   sudo bash scripts/power-cap-sweep.sh --caps 260,280,300       # explicit caps (overrides auto-derive)
 #   sudo bash scripts/power-cap-sweep.sh --gpu 1                  # specific GPU index
 #   sudo bash scripts/power-cap-sweep.sh --cooling water          # tag the run as water-cooled
@@ -20,13 +20,18 @@
 #   sudo bash scripts/power-cap-sweep.sh --no-reset               # leave at last cap (you reset manually)
 #
 # Default sweep behavior:
-#   Without --caps, the script reads the card's power.min_limit and
-#   power.max_limit and generates 6 evenly-spaced caps rounded to 10W.
-#   For a 3090 (~120-388W) → 120/170/220/270/320/388W.
-#   For a 4090 (~150-450W) → 150/210/270/330/390/450W.
-#   For a 5090 (~250-575W) → 250/315/380/445/510/575W.
-#   This keeps the first sweep on a new rig exploratory; rerun with finer
-#   --steps or specific --caps to zoom in on the knee.
+#   Without --caps, the script reads power.min_limit and power.max_limit and
+#   generates caps at 10W increments across the entire envelope. This matches
+#   @laurimyllari's reference resolution that produced the cleanest 4090 curve.
+#   Per-card runtime estimates (~2 min/cap including bench warmup):
+#
+#     3090 (100-388W) →  30 caps  ~60 min
+#     4090 (150-450W) →  31 caps  ~62 min
+#     5090 (250-575W) →  33 caps  ~66 min
+#     A5000 (100-230W) → 14 caps  ~30 min
+#
+#   Quick first-look: --step-size 20 cuts runtime in half. For zooming into
+#   a known-good region, use --caps 260,280,300 explicitly.
 #
 # Output:
 #   - Per-cap bench logs at /tmp/power-cap-N{wattage}.log
@@ -47,17 +52,17 @@ set -euo pipefail
 
 # Defaults — override via flags
 GPU_INDEX=0
-CAPS=""    # empty → auto-derive from card's min/max power limits at 6 even steps
-RESET=1    # 1 = reset to stock at end; 0 = leave at last cap
-COOLING="unspecified"  # air|water|aio|unspecified — affects how to read the data
-NUM_STEPS=6   # number of caps to test if --caps not specified
+CAPS=""              # empty → auto-derive from card's min/max power limits at STEP_SIZE granularity
+RESET=1              # 1 = reset to stock at end; 0 = leave at last cap
+COOLING="unspecified" # air|water|aio|unspecified — affects how to read the data
+STEP_SIZE=10          # increment in W between caps when --caps not specified (10W matches @laurimyllari's resolution)
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --gpu)        GPU_INDEX="$2"; shift 2 ;;
     --caps)       CAPS="$2"; shift 2 ;;
     --cooling)    COOLING="$2"; shift 2 ;;
-    --steps)      NUM_STEPS="$2"; shift 2 ;;
+    --step-size)  STEP_SIZE="$2"; shift 2 ;;
     --no-reset)   RESET=0; shift ;;
     -h|--help)
       sed -n '1,/^set -euo/p' "$0" | grep '^#' | sed 's/^# \?//'
@@ -133,40 +138,48 @@ MAX_LIMIT=$(nvidia-smi --query-gpu=power.max_limit     --format=csv,noheader,nou
 GPU_NAME=$(nvidia-smi --query-gpu=name                  --format=csv,noheader            -i "$GPU_INDEX" | head -1)
 GPU_VRAM=$(nvidia-smi --query-gpu=memory.total          --format=csv,noheader,nounits     -i "$GPU_INDEX" | head -1 | tr -d ' ')
 
-# If --caps not specified, derive an evenly-spaced sweep across the card's
-# operating range. This makes the script work out-of-the-box on any GPU class
-# (3090 ~120-388W, 4090 ~150-450W, 5090 ~250-575W, A5000 ~100-230W, etc.)
-# without each contributor having to know their card's stock TDP.
+# If --caps not specified, derive a sweep at STEP_SIZE-W increments across the
+# card's operating range. 10W default matches @laurimyllari's reference
+# resolution that produced the cleanest 4090 curve. Works on any card class:
+#   3090 (100-388W) →  30 caps  (~60 min runtime at 2 min/cap)
+#   4090 (150-450W) →  31 caps  (~62 min runtime)
+#   5090 (250-575W) →  33 caps  (~66 min runtime)
+#   A5000 (100-230W) → 14 caps  (~30 min runtime)
+# For a quicker first-look use --step-size 20 (cuts runtime in half) or
+# --caps 260,280,300 (zoom into a known-good region).
 if [ -z "$CAPS" ]; then
   CAPS=$(python3 -c "
-min_l = float('${MIN_LIMIT%.*}')
-max_l = float('${MAX_LIMIT%.*}')
-n = max(2, int('${NUM_STEPS}'))
-# Round each step to nearest 10W for cleanliness (don't lose more than a few
-# percent off the actual evenly-spaced points).
-steps = [round((min_l + i * (max_l - min_l) / (n - 1)) / 10) * 10 for i in range(n)]
-# Ensure first/last respect min/max bounds (rounding can underflow/overflow).
-steps[0]  = max(steps[0],  int(min_l))
-steps[-1] = min(steps[-1], int(max_l))
-# Deduplicate (rounding can collapse near-equal values on narrow ranges).
-seen = []
-for s in steps:
-    if s not in seen: seen.append(s)
-print(','.join(str(s) for s in seen))
+min_l = int(float('${MIN_LIMIT%.*}'))
+max_l = int(float('${MAX_LIMIT%.*}'))
+step = max(1, int('${STEP_SIZE}'))
+# Round min UP to nearest step boundary, max DOWN — keeps caps clean multiples of step.
+start = ((min_l + step - 1) // step) * step
+end   = (max_l // step) * step
+caps = list(range(start, end + 1, step))
+# Always include the exact max_limit at the end if rounding clipped it (so we
+# capture the stock-or-near anchor).
+if caps[-1] != max_l:
+    caps.append(max_l)
+print(','.join(str(c) for c in caps))
 ")
   AUTO_DERIVED=1
 else
   AUTO_DERIVED=0
 fi
+NUM_CAPS=$(echo "$CAPS" | tr ',' '\n' | wc -l | tr -d ' ')
+EST_MIN=$((NUM_CAPS * 2))
 
 echo "[setup] GPU $GPU_INDEX: $GPU_NAME ($GPU_VRAM MiB)"
 echo "[setup] power envelope: ${MIN_LIMIT}W (min) → ${STOCK_TDP}W (default) → ${MAX_LIMIT}W (max)"
 echo "[setup] cooling:   $COOLING"
 if [ "$AUTO_DERIVED" -eq 1 ]; then
-  echo "[setup] sweep caps: $CAPS W (auto-derived: $NUM_STEPS evenly-spaced steps; override via --caps)"
+  echo "[setup] sweep caps: $NUM_CAPS caps in ${STEP_SIZE}W increments (override via --caps or --step-size)"
+  echo "[setup]            $CAPS W"
 else
-  echo "[setup] sweep caps: $CAPS W (user-specified)"
+  echo "[setup] sweep caps: $NUM_CAPS caps (user-specified)"
+  echo "[setup]            $CAPS W"
 fi
+echo "[setup] estimated runtime: ~${EST_MIN} min (${NUM_CAPS} caps × ~2 min/cap including bench warmup)"
 echo "[setup] reset at end: $([ $RESET -eq 1 ] && echo yes || echo no)"
 echo
 
@@ -218,21 +231,77 @@ for CAP in "${CAP_ARRAY[@]}"; do
   # Brief settle (let driver re-clock)
   sleep 3
 
+  # Start background power-draw sampler at 0.5s intervals.
+  # Capturing under-load power requires sampling DURING bench runs — bench.sh's
+  # final "GPU state" line samples after all runs complete and may catch the
+  # card mid-idle (~40W) instead of under load (~330W). The sampler writes
+  # CSV: index, utilization%, power.draw_W, temp_C — we post-process for
+  # median power across samples where utilization > 50% (under-load median).
+  SAMPLE_FILE="/tmp/power-cap-N${CAP}-samples.csv"
+  (
+    while true; do
+      nvidia-smi --query-gpu=index,utilization.gpu,power.draw,temperature.gpu \
+        --format=csv,noheader,nounits -i "$GPU_INDEX" 2>/dev/null | head -1
+      sleep 0.5
+    done
+  ) > "$SAMPLE_FILE" &
+  SAMPLER_PID=$!
+  trap "kill $SAMPLER_PID 2>/dev/null || true" EXIT
+
   # Run canonical bench
   LOG_FILE="/tmp/power-cap-N${CAP}.log"
-  echo "[bench] running bench.sh @ ${CAP}W cap (output: $LOG_FILE)"
+  echo "[bench] running bench.sh @ ${CAP}W cap (output: $LOG_FILE; sampling power)"
   if ! bash "$BENCH" 2>&1 | tee "$LOG_FILE" | tail -8; then
+    kill $SAMPLER_PID 2>/dev/null || true
     echo "[warn] bench.sh failed at ${CAP}W"
     continue
   fi
+  kill $SAMPLER_PID 2>/dev/null || true
+  trap - EXIT
   echo
 
-  # Extract metrics
+  # Extract bench TPS metrics from the log
   NARR_TPS=$(grep -A1 "summary \[narrative\]" "$LOG_FILE" | grep "wall_TPS" | head -1 | grep -oE 'mean= *[0-9]+\.[0-9]+' | head -1 | grep -oE '[0-9]+\.[0-9]+' || echo "?")
   CODE_TPS=$(grep -A1 "summary \[code\]"      "$LOG_FILE" | grep "wall_TPS" | head -1 | grep -oE 'mean= *[0-9]+\.[0-9]+' | head -1 | grep -oE '[0-9]+\.[0-9]+' || echo "?")
-  GPU_STATE_LINE=$(grep -A2 "GPU state" "$LOG_FILE" | grep ",$GPU_INDEX," | head -1 || grep -A2 "GPU state" "$LOG_FILE" | grep "^${GPU_INDEX}," | head -1 || echo "")
-  ACTUAL_POWER=$(echo "$GPU_STATE_LINE" | awk -F', ' '{print $5}' | grep -oE '[0-9]+\.?[0-9]*' | head -1 || echo "?")
-  GPU_TEMP=$(echo "$GPU_STATE_LINE" | awk -F', ' '{print $6}' | tr -d ' ' || echo "?")
+
+  # Compute median under-load power and peak temp from the sampler.
+  # Filter to samples where GPU utilization > 50% (i.e. actively decoding).
+  # Falls back to bench.sh's GPU-state line if sampler captured no under-load
+  # samples (rare; only happens if bench.sh failed silently or finished before
+  # the sampler took its first reading).
+  if [ -s "$SAMPLE_FILE" ]; then
+    UNDER_LOAD_STATS=$(python3 -c "
+import sys
+samples = []
+with open('$SAMPLE_FILE') as f:
+    for line in f:
+        try:
+            idx, util, power, temp = [x.strip() for x in line.strip().split(',')]
+            if int(util) > 50:
+                samples.append((float(power), int(temp)))
+        except Exception:
+            continue
+if not samples:
+    print('? ?')
+else:
+    powers = sorted(s[0] for s in samples)
+    temps  = [s[1] for s in samples]
+    median_power = powers[len(powers)//2]
+    peak_temp    = max(temps)
+    print(f'{median_power:.2f} {peak_temp}')
+" 2>/dev/null || echo "? ?")
+    ACTUAL_POWER=$(echo "$UNDER_LOAD_STATS" | awk '{print $1}')
+    GPU_TEMP=$(echo "$UNDER_LOAD_STATS"      | awk '{print $2}')
+  else
+    ACTUAL_POWER="?"; GPU_TEMP="?"
+  fi
+
+  # Fallback to bench.sh GPU-state line if sampler returned ?
+  if [ "$ACTUAL_POWER" = "?" ]; then
+    GPU_STATE_LINE=$(grep -A2 "GPU state" "$LOG_FILE" | grep ",$GPU_INDEX," | head -1 || grep -A2 "GPU state" "$LOG_FILE" | grep "^${GPU_INDEX}," | head -1 || echo "")
+    ACTUAL_POWER=$(echo "$GPU_STATE_LINE" | awk -F', ' '{print $5}' | grep -oE '[0-9]+\.?[0-9]*' | head -1 || echo "?")
+    GPU_TEMP=$(echo "$GPU_STATE_LINE"     | awk -F', ' '{print $6}' | tr -d ' ' || echo "?")
+  fi
 
   # TPS/W efficiency calc (if both numeric)
   if [[ "$NARR_TPS" =~ ^[0-9]+\.[0-9]+$ && "$ACTUAL_POWER" =~ ^[0-9]+\.?[0-9]*$ && "$ACTUAL_POWER" != "0" ]]; then
