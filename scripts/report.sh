@@ -377,24 +377,92 @@ section "Stack version"
 # ---------------------------------------------------------------------------
 
 section "Active container"
+# Engine-agnostic auto-detection: try vllm-* first (most common on this stack),
+# fall back to llama-cpp-* (the alternate engine we ship). User can override
+# with CONTAINER=... env var for non-standard naming (microk8s deployments,
+# host engine builds via CONTAINER=none, etc.).
 if [[ -z "$CONTAINER" ]] && have docker && docker info >/dev/null 2>&1; then
   CONTAINER=$(docker ps --format '{{.Names}}' --filter 'name=vllm-qwen36' 2>/dev/null | head -1)
   [[ -z "$CONTAINER" ]] && CONTAINER=$(docker ps --format '{{.Names}}' --filter 'name=vllm-' 2>/dev/null | head -1)
+  [[ -z "$CONTAINER" ]] && CONTAINER=$(docker ps --format '{{.Names}}' --filter 'name=llama-cpp-' 2>/dev/null | head -1)
 fi
 
+# Engine class — drives which probes run inside the container body. Inferred
+# from container name; user can override with ENGINE_KIND=vllm|llamacpp env var.
+case "${ENGINE_KIND:-}" in
+  vllm|llamacpp|unknown) ;;  # respect user override
+  *)
+    case "$CONTAINER" in
+      vllm-*)      ENGINE_KIND="vllm" ;;
+      llama-cpp-*) ENGINE_KIND="llamacpp" ;;
+      *)           ENGINE_KIND="unknown" ;;
+    esac ;;
+esac
+
 if [[ -z "$CONTAINER" ]]; then
-  echo "_No vLLM container running. Start one with \`bash scripts/launch.sh\` and re-run for the full report._"
+  echo "_No vLLM or llama.cpp container running. Start one with \`bash scripts/launch.sh\` and re-run for the full report._"
 else
   {
     status=$(docker ps --filter "name=$CONTAINER" --format '{{.Status}}' 2>/dev/null | head -1)
     ports=$(docker ps --filter "name=$CONTAINER" --format '{{.Ports}}' 2>/dev/null | head -1)
     image=$(docker ps --filter "name=$CONTAINER" --format '{{.Image}}' 2>/dev/null | head -1)
     echo "- **Name:** \`$CONTAINER\`"
+    echo "- **Engine:** \`${ENGINE_KIND}\`"
     echo "- **Status:** ${status:-unknown}"
     echo "- **Ports:** ${ports:-unknown}"
     echo "- **Image:** \`${image:-unknown}\`"
   } | redact
 
+  # Engine-specific probes from this point. vLLM container has Python +
+  # PyTorch + Genesis markers; llama.cpp container ships a stripped C++
+  # binary with no Python — different probe set.
+
+  # Engine-specific subsections. vLLM container has Python + PyTorch + Genesis
+  # markers; llama.cpp container ships a stripped C++ binary with no Python
+  # exec available — different probe set.
+
+  if [[ "$ENGINE_KIND" == "llamacpp" ]]; then
+    # ---- llama.cpp probe set ----
+    subsection "Container engine state (llama.cpp)"
+    {
+      # llama-server prints its version + build flags on startup. Grep the
+      # boot log for the version banner instead of trying to docker exec
+      # (the llama-cpp image doesn't ship interactive shell utilities).
+      llama_version=$(docker logs "$CONTAINER" 2>&1 | grep -E '^build_info:|^version:|^system_info:' | head -3)
+      if [[ -n "$llama_version" ]]; then
+        echo "**llama-server version + build:**"
+        echo '```'
+        echo "$llama_version"
+        echo '```'
+        echo
+      fi
+
+      # Loaded model + ctx + KV type — surfaces model identity from boot log.
+      model_loaded=$(docker logs "$CONTAINER" 2>&1 | grep -E 'load_model:|llama_model_load_from_file_impl:|llama_kv_cache_init:|llama_init_from_model:' | head -8)
+      if [[ -n "$model_loaded" ]]; then
+        echo "**Model load + KV cache init:**"
+        echo '```'
+        echo "$model_loaded"
+        echo '```'
+        echo
+      fi
+
+      # llama.cpp doesn't have Genesis / vLLM SpecDecoding metrics. Skip
+      # those grep patterns. Capture warnings/errors only.
+      boot_errors=$(docker logs "$CONTAINER" 2>&1 | grep -iE '^(warn|error|fatal|abort)|panic|core dumped' | tail -5)
+      if [[ -n "$boot_errors" ]]; then
+        echo "**Recent warnings/errors (last 5):**"
+        echo '```'
+        echo "$boot_errors"
+        echo '```'
+      fi
+    } | redact
+
+    subsection "Full boot log (first 200 lines)"
+    docker logs "$CONTAINER" 2>&1 | head -200 | redact | details "First 200 lines of docker logs"
+
+  else
+  # ---- vLLM probe set (default for engine=vllm or unknown) ----
   subsection "Container Python / CUDA versions"
   {
     # vLLM version + Torch CUDA build vs host driver mismatch is one of the
@@ -478,7 +546,8 @@ else
 
   subsection "Full boot log (first 200 lines)"
   docker logs "$CONTAINER" 2>&1 | head -200 | redact | details "First 200 lines of docker logs"
-fi
+  fi  # end of vLLM/llamacpp engine branch
+fi  # end of "if no container running"
 
 # ---------------------------------------------------------------------------
 # Recent failed boot attempts
