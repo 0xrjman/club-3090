@@ -114,7 +114,7 @@ ax1.scatter([1635], [428.19], s=180, color="goldenrod", marker="*",
 ax1.annotate(
     "★ peak efficiency\n7001/1635 → 2.025 TPS/W\n428 narr TPS, 211W draw\n(1.42× more efficient than\nthe 400W power-cap sweet spot)",
     xy=(1635, 428.19),
-    xytext=(1700, 35),
+    xytext=(2350, 50),
     fontsize=9.5,
     fontweight="bold",
     bbox=dict(boxstyle="round,pad=0.35", facecolor="#fff3cd",
@@ -127,9 +127,9 @@ ax1.annotate(
 ax1.scatter([2122], [602.20], s=180, color="#1f77b4", marker="*",
             edgecolors="#0a3d6e", linewidths=1.5, zorder=5)
 ax1.annotate(
-    "★ Pareto point\n14001/2122 → 1.92 TPS/W\n602 narr TPS, 314W draw\n(strictly better than\n400W cap: +5% TPS, -22% W)",
+    "★ Pareto point\n14001/2122 → 1.92 TPS/W\n602 narr TPS, 314W draw\n(strictly better than\n400W cap:\n+5% TPS, -22% W)",
     xy=(2122, 602.20),
-    xytext=(800, 720),
+    xytext=(2350, 320),
     fontsize=9.5,
     fontweight="bold",
     bbox=dict(boxstyle="round,pad=0.35", facecolor="#dbeafe",
