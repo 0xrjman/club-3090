@@ -321,6 +321,38 @@ Then `docker compose up -d` as usual. No edits to tracked files needed.
 
 On the WSL2 rig where this was diagnosed, weight-load time on a fresh boot (caches cleared) was 32 sec with `expandable_segments:True` and 13 sec with `expandable_segments:False`. This is a single observation, not a controlled A/B (cache state, FS warmth and other factors weren't held constant), so treat it as suggestive rather than measured. If you're chasing boot-time latency on WSL2 and not crashing, the override is harmless to try.
 
+### Fix — `VLLM_ENFORCE_EAGER=1` for Cliff 2 GDN spike on small-VRAM rigs
+
+A third runtime failure mode separate from TDR + `expandable_segments`: at ~50-65K active context tokens, the DeltaNet GDN forward kernel produces a large activation spike that OOMs on rigs with reduced VRAM headroom. Most often hits **WSL2 / laptop GPUs** where the WSL2 boot overhead (~1.31 GiB on RTX 5090 Laptop / driver 596.36) eats into the 24 GB budget the composes assume, but can fire on any single-card config — see [`docs/CLIFFS.md`](CLIFFS.md) for the full diagnostic.
+
+**Workaround**: pass `--enforce-eager` to vLLM, which disables CUDA graphs and frees the activation memory the cliff was contesting. Tradeoff: ~20-30% TPS reduction in exchange for stable long-context behavior.
+
+Since 2026-05-07 ([PR #99](https://github.com/noonghunna/club-3090/pull/99) by @easel) all qwen3.6-27b vLLM composes expose `VLLM_ENFORCE_EAGER` as an env-var hook so you can enable the flag from gitignored `.env` instead of editing tracked files:
+
+```sh
+# models/qwen3.6-27b/vllm/compose/.env
+VLLM_ENFORCE_EAGER=1
+```
+
+Then `docker compose up -d` as usual. The bash entrypoint expands `${VLLM_ENFORCE_EAGER:+--enforce-eager}` only when the var is non-empty, so desktop users with no `.env` see zero behavior change.
+
+### Combined WSL2 / laptop `.env` template
+
+Three overrides commonly land together on WSL2 / laptop rigs (5090 Laptop validated 2026-05-07 by @easel). Drop this into `models/qwen3.6-27b/vllm/compose/.env`:
+
+```sh
+# WSL2 boot overhead caps safe gpu_memory_utilization at ~0.94 (vs 0.95 desktop default)
+GPU_MEMORY_UTILIZATION=0.94
+
+# expandable_segments:True crashes weight repack on WSL2 driver 596.36
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False,max_split_size_mb:512
+
+# Disable CUDA graphs — Cliff 2 GDN-spike workaround (~20-30% TPS cost, stable >50K ctx)
+VLLM_ENFORCE_EAGER=1
+```
+
+All three are `${VAR}`-interpolated by docker-compose at boot, so adding/removing any of them needs only an `.env` edit + recreate.
+
 ### Additional WSL2 considerations
 
 - vLLM auto-detects WSL2 and disables `pin_memory` (`Using 'pin_memory=False' as WSL is detected. This may slow down the performance.` in boot log) — expected behavior, can't be overridden cleanly.

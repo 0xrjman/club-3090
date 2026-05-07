@@ -92,6 +92,16 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+    entrypoint:
+      - bash
+      - -c
+      - |
+        # VLLM_ENFORCE_EAGER=1 in compose/.env disables CUDA graphs — use on
+        # hardware where Cliff 2 GDN activation spikes occur at runtime
+        # (~50-65K active context tokens). Costs ~20-30% TPS in exchange for
+        # stability. See docs/HARDWARE.md "Note for WSL2 / Windows users".
+        exec vllm serve ${VLLM_ENFORCE_EAGER:+--enforce-eager} "$@"
+      - --
     command:
       - --model
       - /root/.cache/huggingface/qwen3.6-27b-autoround-int4
