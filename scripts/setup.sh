@@ -124,6 +124,40 @@ preflight_hf_token  # soft-warn only; downloads will surface the hard failure
 echo "[preflight] ok."
 echo ""
 
+# ---------- WSL2 detection — auto-configure .env for known WSL2 boot crash ----------
+# WSL2 + driver 596.36 + vLLM nightly hit a `gptq_marlin_repack` boot crash
+# with `cudaErrorNotReady`. Workaround is `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False`
+# (PR #84). The compose default is `expandable_segments:True,max_split_size_mb:512`
+# which works on bare-metal Linux but fails on WSL2 — so we auto-create a .env
+# override here on detected WSL2 systems. Cross-rig validated by @timxx (issue #60),
+# @easel, and others. Safe no-op on bare-metal (only runs when /proc/version
+# contains "microsoft").
+COMPOSE_DIR="${ROOT_DIR}/models/${MODEL_NAME}/vllm/compose"
+if [[ -f /proc/version ]] && grep -qi microsoft /proc/version 2>/dev/null; then
+  ENV_FILE="${COMPOSE_DIR}/.env"
+  if [[ -d "${COMPOSE_DIR}" ]]; then
+    if [[ ! -f "${ENV_FILE}" ]]; then
+      cat > "${ENV_FILE}" <<'EOF'
+# WSL2 boot-crash workaround — see PR #84 + issue #60.
+# vLLM + WSL2 + driver 596.36 hit `gptq_marlin_repack` cudaErrorNotReady on boot
+# with the default `expandable_segments:True`. This override fixes it.
+# Auto-created by scripts/setup.sh on detected WSL2 systems. Safe to delete
+# on bare-metal Linux (the compose default works there).
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False
+EOF
+      echo "[wsl2] detected WSL2 — created ${ENV_FILE} with PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False"
+      echo "[wsl2] this fixes the known gptq_marlin_repack boot crash on WSL2 + driver ≥596.36 (issue #60)."
+    elif ! grep -q "expandable_segments:False" "${ENV_FILE}"; then
+      echo "[wsl2] WARN: detected WSL2 but ${ENV_FILE} exists without the expandable_segments:False override."
+      echo "[wsl2]       If vLLM fails to boot with cudaErrorNotReady, add:"
+      echo "[wsl2]         PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False"
+      echo "[wsl2]       See PR #84 / issue #60 for context."
+    else
+      echo "[wsl2] detected WSL2 — ${ENV_FILE} already has the expandable_segments:False override. ✓"
+    fi
+  fi
+fi
+
 # ---------- Tool checks ----------
 need() {
   command -v "$1" >/dev/null 2>&1 || {
