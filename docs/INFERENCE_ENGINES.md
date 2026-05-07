@@ -39,7 +39,7 @@ All five are actively developed. ktransformers is positioned as research but pro
 ## Hardware support
 
 | Feature | vLLM | llama.cpp | SGLang | ktransformers | ik_llama.cpp |
-|---|---|---|---|------|
+|---|---|---|---|---|---|
 | **NVIDIA CUDA (CC 7.0 Volta)** | ❌ (needs ≥7.5) | ✅ | ❌ (needs ≥8.0) | ❌ (needs ≥8.0) | ✅ |
 | **NVIDIA CC 7.5 Turing** | ✅ | ✅ | ⚠️ Limited | ❌ | ✅ |
 | **NVIDIA CC 8.0+ Ampere (3090)** | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -53,7 +53,7 @@ All five are actively developed. ktransformers is positioned as research but pro
 | **CPU-only inference** | ⚠️ Slow path | ✅ | ⚠️ | ❌ (kernel library) | ✅ |
 | **Vulkan (cross-platform)** | ❌ | ✅ | ❌ | ❌ | ✅ |
 
-**Recommendation for our stack** (RTX 3090 sm_86 + 2× consumer-board PCIe 4.0): all four work. Pick by feature, not hardware support.
+**Recommendation for our stack** (RTX 3090 sm_86 + 2× consumer-board PCIe 4.0): all five work. Pick by feature, not hardware support.
 
 ---
 
@@ -62,7 +62,7 @@ All five are actively developed. ktransformers is positioned as research but pro
 ### Weight quants
 
 | Format | vLLM | llama.cpp | SGLang | ktransformers | ik_llama.cpp |
-|---|---|---|---|------|
+|---|---|---|---|---|---|
 | **GGUF (Q*, K*, IQ*)** | ⚠️ Limited (recent UD-IQ1_S support) | ✅ Native | ⚠️ Recent | ⚠️ | ✅ Native |
 | **AutoRound INT4 (Marlin)** | ✅ + our [PR #40361](https://github.com/vllm-project/vllm/pull/40361) | ❌ | ✅ | ⚠️ | ❌ |
 | **GPTQ INT4** | ✅ | ❌ | ✅ | ✅ | ❌ |
@@ -77,7 +77,7 @@ All five are actively developed. ktransformers is positioned as research but pro
 ### KV cache types
 
 | KV format | vLLM | llama.cpp | SGLang | ktransformers | ik_llama.cpp |
-|---|---|---|---|------|
+|---|---|---|---|---|---|
 | **FP16 / BF16** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **FP8 e4m3 / e5m2** | ✅ | ⚠️ | ✅ | ✅ | ⚠️ (inherits llama.cpp) |
 | **INT8 per-token-head** | ⚠️ ([PR #40391](https://github.com/vllm-project/vllm/pull/40391) for hybrid pages) | ❌ | ✅ | ⚠️ | ✅ |
@@ -95,7 +95,7 @@ All five are actively developed. ktransformers is positioned as research but pro
 ## Speculative decoding
 
 | Method | vLLM | llama.cpp | SGLang | ktransformers | ik_llama.cpp |
-|---|---|---|---|------|
+|---|---|---|---|---|---|
 | **MTP (Multi-Token Prediction)** | ✅ broad model coverage (Qwen3.x, Gemma4, MiniMax-M2, DeepSeek) | ✅ via [PR #22673](https://github.com/ggml-org/llama.cpp/pull/22673) (am17an) — community-built | ✅ Spec V2 default (overlap scheduling) | ⚠️ via SGLang front-end | ✅ **Merged on main** (GLM-4.x + Qwen MTP, no PR-branch needed) |
 | **EAGLE / EAGLE-3** | ✅ Eagle3 (Qwen3.5, Gemma4, MiniMax-M2) | ❌ | ✅ Day-0 for newest models | ❌ | ❌ |
 | **DFlash (block-diffusion)** | ✅ ([PR #41703](https://github.com/vllm-project/vllm/pull/41703) Codex-rebased; Luce z-lab) | ⚠️ Luce fork (server-only) | ✅ DFLASH cross-backend incl. ROCm (v0.5.11) | ❌ | ❌ |
@@ -111,7 +111,7 @@ All five are actively developed. ktransformers is positioned as research but pro
 ## MoE features
 
 | Feature | vLLM | llama.cpp | SGLang | ktransformers | ik_llama.cpp |
-|---|---|---|---|------|
+|---|---|---|---|---|---|
 | **Tensor Parallel** | ✅ | ✅ | ✅ | ✅ | ⚠️ Limited (inherits llama.cpp) |
 | **Expert Parallel (EP)** | ✅ Elastic EP M2 ([PR #35627](https://github.com/vllm-project/vllm/pull/35627)) | ❌ | ✅ Independent MoE/attention tuning (v0.5.11) | ✅ kt-kernel | ❌ |
 | **Layer-uniform expert offload to CPU** | ⚠️ generic `--cpu-offload-gb` (catastrophic for MoE) | ✅ `--n-cpu-moe N` / `-ot` regex | ⚠️ via kt-kernel | N/A | ✅ `-ot` regex + `-ser` smart expert reduction (key strength) |
@@ -128,7 +128,7 @@ All five are actively developed. ktransformers is positioned as research but pro
 ## Distributed / multi-card
 
 | Feature | vLLM | llama.cpp | SGLang | ktransformers | ik_llama.cpp |
-|---|---|---|---|------|
+|---|---|---|---|---|---|
 | **Tensor Parallel (TP)** | ✅ | ✅ `-sm tensor` | ✅ | ✅ | ⚠️ Limited (inherits llama.cpp) |
 | **Pipeline Parallel (PP)** | ✅ + cudagraphs ([PR #35162](https://github.com/vllm-project/vllm/pull/35162)) | ⚠️ Limited | ✅ | ✅ | ⚠️ Limited |
 | **Expert Parallel (EP)** | ✅ Elastic EP M2 | ❌ | ✅ + all-reduce fusion | ✅ kt-kernel | ❌ |
@@ -146,7 +146,7 @@ All five are actively developed. ktransformers is positioned as research but pro
 ## Memory / KV cache features
 
 | Feature | vLLM | llama.cpp | SGLang | ktransformers | ik_llama.cpp |
-|---|---|---|---|------|
+|---|---|---|---|---|---|
 | **Paged attention** | ✅ Original (Berkeley) | ⚠️ via continuous-batch slots | ✅ | ✅ via SGLang | ⚠️ via parallel slots (inherits) |
 | **Prefix caching (in-VRAM)** | ✅ default-on | ✅ slot-based | ✅ **RadixAttention** (best-in-class) | ✅ via SGLang | ✅ slot-based (inherits) |
 | **CPU-tier prefix cache (warm restart)** | ✅ via [LMCache](https://github.com/LMCache/LMCache) connector | ⚠️ via mmap | ✅ Decode Radix Cache (v0.5.11) | ⚠️ | ⚠️ via mmap |
@@ -162,7 +162,7 @@ All five are actively developed. ktransformers is positioned as research but pro
 ## Multimodal
 
 | Modality | vLLM | llama.cpp | SGLang | ktransformers | ik_llama.cpp |
-|---|---|---|---|------|
+|---|---|---|---|---|---|
 | **Vision (image)** | ✅ broad VLM coverage (Gemma4, Granite Vision, Hunyuan v3, ViT cudagraphs) | ✅ via `--mmproj` | ✅ optimized encoders | ⚠️ Limited | ✅ via `--mmproj` + on-the-fly MLA tensors for DeepSeek |
 | **Audio** | ✅ Nemotron / Qwen3-Omni | ✅ Granite Speech (b9045) | ⚠️ Limited | ❌ | ✅ inherits Granite Speech support |
 | **Video** | ⚠️ Frame-by-frame | ⚠️ | ✅ Diffusion (LTX-2, FLUX) | ❌ | ⚠️ |
@@ -175,7 +175,7 @@ All five are actively developed. ktransformers is positioned as research but pro
 ## Structured output / tool calling
 
 | Feature | vLLM | llama.cpp | SGLang | ktransformers | ik_llama.cpp |
-|---|---|---|---|------|
+|---|---|---|---|---|---|
 | **OpenAI tool-call API compat** | ✅ | ✅ via `--jinja` | ✅ | ✅ via SGLang | ✅ via `--jinja` |
 | **Custom tool parsers** | ✅ Per-model (Gemma4, Kimi-K2.5, GigaChat 3.1, qwen3_coder) | ⚠️ Generic | ✅ | ⚠️ | ⚠️ Generic |
 | **Grammar (GBNF / EBNF)** | ✅ via outlines/lm-format-enforcer/xgrammar | ✅ Native GBNF | ✅ FSM-based | ⚠️ | ✅ Native GBNF |
@@ -191,7 +191,7 @@ All five are actively developed. ktransformers is positioned as research but pro
 ## Model coverage (latest architectures, 2026 lens)
 
 | Model family | vLLM | llama.cpp | SGLang | ktransformers | ik_llama.cpp |
-|---|---|---|---|------|
+|---|---|---|---|---|---|
 | **Qwen3.5 / Qwen3.6 (incl. 80B-A3B)** | ✅ | ✅ | ✅ Day-0 (Qwen3.6 v0.5.11) | ✅ | ✅ |
 | **Qwen3-Next family (DeltaNet hybrid)** | ✅ via Genesis patches | ✅ | ✅ | ⚠️ | ✅ |
 | **Gemma 4 / Gemma-4 31B** | ✅ + MTP ([PR #41745](https://github.com/vllm-project/vllm/pull/41745)) + DFlash ([PR #41703](https://github.com/vllm-project/vllm/pull/41703)) | ✅ via mmproj | ✅ Day-0 | ⚠️ | ✅ via mmproj |
@@ -211,7 +211,7 @@ All five are actively developed. ktransformers is positioned as research but pro
 ## API / serving surface
 
 | Feature | vLLM | llama.cpp | SGLang | ktransformers | ik_llama.cpp |
-|---|---|---|---|------|
+|---|---|---|---|---|---|
 | **OpenAI-compatible HTTP** | ✅ | ✅ (`llama-server`) | ✅ | ✅ via SGLang | ✅ (`llama-server` compatible CLI) |
 | **Anthropic API compat** | ⚠️ | ❌ | ✅ Direct (v0.5.9) | ⚠️ | ❌ |
 | **Native Python SDK** | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -302,7 +302,7 @@ Q1: Does the model fit your VRAM at desired quant?
 ## Cross-engine bug / feature parity tracker
 
 | Issue | vLLM | llama.cpp | SGLang | ktransformers | ik_llama.cpp |
-|---|---|---|---|------|
+|---|---|---|---|---|---|
 | **Marlin pad-sub-tile-n** (output-dim shards <64 on TP=2 W4A16) | 🟡 [PR #40361](https://github.com/vllm-project/vllm/pull/40361) open | N/A | 🟡 Same bug, same fix applies | N/A | N/A |
 | **DeltaNet rollback** (blocks EAGLE/DFlash/draft on Qwen3-Next) | 🔴 [#39931](https://github.com/vllm-project/vllm/issues/39931) | 🔴 | 🔴 | 🔴 | 🔴 |
 | **MTP for Gemma 4** | 🟢 [PR #41745](https://github.com/vllm-project/vllm/pull/41745) merged | ❌ | ✅ Day-0 | ⚠️ | ❌ |
