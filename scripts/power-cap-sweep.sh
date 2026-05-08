@@ -413,7 +413,13 @@ try:
                 text = ""
                 delta = choice.get("delta")
                 if isinstance(delta, dict):
-                    text = delta.get("content") or ""
+                    # Sum BOTH content and reasoning_content fields. Some llama.cpp
+                    # configs (--reasoning-format auto, or chat completions with
+                    # preserve_thinking) route thinking tokens to reasoning_content
+                    # instead of content. Counting only content silently produces
+                    # 0 TPS readings even though the GPU is generating fine. See
+                    # disc club-3090#62 (laurimyllari 4090 sweep, 2026-05-08).
+                    text = (delta.get("content") or "") + (delta.get("reasoning_content") or "")
                 if not text:
                     text = choice.get("text") or ""
                 if text:
@@ -535,7 +541,13 @@ try:
                 text = ""
                 delta = choice.get("delta")
                 if isinstance(delta, dict):
-                    text = delta.get("content") or ""
+                    # Sum BOTH content and reasoning_content fields. Some llama.cpp
+                    # configs (--reasoning-format auto, or chat completions with
+                    # preserve_thinking) route thinking tokens to reasoning_content
+                    # instead of content. Counting only content silently produces
+                    # 0 TPS readings even though the GPU is generating fine. See
+                    # disc club-3090#62 (laurimyllari 4090 sweep, 2026-05-08).
+                    text = (delta.get("content") or "") + (delta.get("reasoning_content") or "")
                 if not text:
                     text = choice.get("text") or ""
                 if text:
