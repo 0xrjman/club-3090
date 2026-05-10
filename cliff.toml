@@ -14,10 +14,10 @@
 header = """
 # Changelog
 
-Auto-generated from commit messages by [git-cliff](https://git-cliff.org/).
-Update flow: write rich commit message bodies → tag → CI regenerates this file
-and the GitHub Release notes from the same source. Don't hand-edit below the
-header — your changes will be overwritten on the next tag.
+Auto-generated from commit subjects by [git-cliff](https://git-cliff.org/) on tag
+push. Click any commit SHA below to see the full message body (why / how /
+validation data) — those live in `git log`, not here. Don't hand-edit; the file
+is regenerated on every tag.
 
 **Versioning:** SemVer in `0.x` — treat any minor bump as potentially breaking
 until `1.0`. Past CalVer tags (`v2026.05.09`, `v2026.05.10`) are preserved for
@@ -36,10 +36,9 @@ history; SemVer takes over from `v0.3.0` onward.
 # the most recent block renders; for full regen of CHANGELOG.md, every tagged
 # block renders in reverse-chronological order.
 #
-# Commit message body (everything after subject + blank line) renders below
-# the subject bullet so rich narrative (tables, validation data, before/after
-# numbers) ends up in both CHANGELOG.md and the GitHub Release page from the
-# same source. Tera templating; see https://keats.github.io/tera/docs/.
+# **Subject-line only** — the commit's first line, with a link to the full
+# commit. Full body (why/how/validation data) lives in `git log` and is one
+# click away via the SHA link. Keeps CHANGELOG.md skim-readable.
 body = """
 {% if version %}\
 ## {{ version }}{% if timestamp %} — {{ timestamp | date(format="%Y-%m-%d") }}{% endif %}
@@ -52,16 +51,7 @@ body = """
 ### {{ group }}
 
 {% for commit in commits %}\
-- **{{ commit.message | split(pat="\\n") | first | trim }}**{% if commit.github.pr_number %} ([#{{ commit.github.pr_number }}](https://github.com/noonghunna/club-3090/pull/{{ commit.github.pr_number }}) by @{{ commit.github.username }}){% else %} ([{{ commit.id | truncate(length=7, end="") }}](https://github.com/noonghunna/club-3090/commit/{{ commit.id }})){% endif %}
-{% set body_lines = commit.message | split(pat="\\n") %}\
-{% if body_lines | length > 1 %}\
-{% set body = body_lines | slice(start=1) | join(sep="\\n") | trim %}\
-{% if body %}
-
-  {{ body | replace(from="\\n", to="\\n  ") }}
-
-{% endif %}\
-{% endif %}\
+- {{ commit.message | split(pat="\\n") | first | trim }}{% if commit.github.pr_number %} ([#{{ commit.github.pr_number }}](https://github.com/noonghunna/club-3090/pull/{{ commit.github.pr_number }}) by @{{ commit.github.username }}){% else %} ([{{ commit.id | truncate(length=7, end="") }}](https://github.com/noonghunna/club-3090/commit/{{ commit.id }})){% endif %}
 {% endfor %}
 {% endfor %}
 
