@@ -16,13 +16,48 @@ history; SemVer takes over from `v0.3.0` onward.
 
 ---
 
+## v0.4.0 — 2026-05-11
+
+
+### ✨ Features
+
+- feat(rebench-report): close 9 gaps — TL;DR + rig + timings + reproducer + delta + discuss variant ([be7f9aa](https://github.com/noonghunna/club-3090/commit/be7f9aa143e9942bbc331e219542b529e4156512))
+- feat(rebench): add REPORT.md synthesizer + container/boot/GPU captures ([18355f4](https://github.com/noonghunna/club-3090/commit/18355f41f68699d76dd50452b32d505119f399d0))
+- feat(rebench): halve default soak to 10 sessions × 5 turns (~15-20 min) ([3406894](https://github.com/noonghunna/club-3090/commit/340689427f971dc16856b9d069ff32d4c280da28))
+- feat(rebench): one-shot canonical 5-step bench orchestrator ([94a2522](https://github.com/noonghunna/club-3090/commit/94a2522417d514674db78c590c4b899bb3eb9d36))
+
+
+### 🐛 Bug fixes
+
+- fix(switch): GPU memory pre-flight + widen RUNNING_PATTERN ([4866913](https://github.com/noonghunna/club-3090/commit/4866913a10002e8a3e6d2a2df7e6fda07fb1f953))
+- fix(rebench-report): parse aider upstream_per_exercise as dict (not list) ([7c4b310](https://github.com/noonghunna/club-3090/commit/7c4b310cca0c62a55a9603cdd31540763e82191a))
+
+
+### 📊 Benchmarks + cross-rig data
+
+- bench(head-to-head): matched-config rebench + Qwen INT8 PTH KV compose ([755e519](https://github.com/noonghunna/club-3090/commit/755e5199ffd029336000fbfb80dc342e42c8c6d5))
+
+
+### 📝 Documentation
+
+- docs(gemma-4-31b): document TQ3 Ampere FA2 head_dim wall + vendor #40108 overlay ([f8c7066](https://github.com/noonghunna/club-3090/commit/f8c706699ca8ae9630c7fda58e23a21183241175))
+- docs(benchmarks): Qwen 3.6 27B vs Gemma 4 31B head-to-head on dual 3090 ([edda3b3](https://github.com/noonghunna/club-3090/commit/edda3b3ecac7d460b34081e307ffd843a414b83e))
+
+
+### 🧹 Maintenance
+
+- chore(composes): bump Qwen pins → 1acd67a7, drop obsolete patch_tolist_cudagraph ([16a1374](https://github.com/noonghunna/club-3090/commit/16a1374053f979363fe4634a73ddd9c90db6061c))
+- chore(cliff): skip auto-regen bot commits in changelog parser ([a258e49](https://github.com/noonghunna/club-3090/commit/a258e496bf926892c3a33e6f2f5ee2efb87a9d71))
+
+
+
+[Pin: `git checkout v0.4.0`] · [Full diff](https://github.com/noonghunna/club-3090/compare/v0.3.3...v0.4.0)
 ## v0.3.3 — 2026-05-10
 
 
 ### 🧹 Maintenance
 
 - chore(changelog): subject-only rendering (drop commit body verbosity) ([eeb946b](https://github.com/noonghunna/club-3090/commit/eeb946b0a7b90462a968c800ecceb2e519b0e7fd))
-- chore(changelog): regenerate for v0.3.2 [skip ci] ([507a36f](https://github.com/noonghunna/club-3090/commit/507a36f7f7576c4b5dcc65e9749b93567a184ec7))
 
 
 
