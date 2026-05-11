@@ -14,10 +14,10 @@
 #   1. bench.sh                — TPS narrative + code (~5 min)
 #   2. verify-stress.sh        — long-context + boundary (~10-15 min)
 #   3. quality-test.sh --full  — 8 packs, 150 scenarios (~45-60 min)
-#   4. soak-test.sh fresh-mode — stability over 100 turns (~30-40 min)
+#   4. soak-test.sh fresh-mode — stability over 50 turns (~15-20 min)
 #   5. quality-test.sh --pack aider-polyglot-30  (~20-45 min)
 #
-# Total per leg: ~2-2.5 hr.
+# Total per leg: ~1.75-2 hr.
 #
 # All artifacts land in results/rebench/<tag>/. Run twice on different models
 # (e.g. one Qwen leg, one Gemma leg) to assemble a matched-config head-to-head.
@@ -34,7 +34,11 @@
 #   MODEL               served-model-name (default: GET /v1/models)
 #   TAG                 output-dir basename (default: ${MODEL}-YYYYMMDD-HHMM)
 #   OUT_DIR             override the output directory
-#   SOAK_SESSIONS       passed through to soak-test.sh (default: 20)
+#   SOAK_SESSIONS       passed through to soak-test.sh (default: 10 —
+#                       halved from the 20-session default to keep total
+#                       runtime ~1.75-2 hr per leg; bump to 20 for the
+#                       canonical stability matrix when validating new
+#                       compose paths.)
 #   SOAK_TURNS          passed through to soak-test.sh (default: 5)
 #
 
@@ -185,7 +189,7 @@ snapshot_quality_json "$OUT_DIR/quality-full.json"
 URL="$URL" MODEL="$MODEL" \
   SOAK_MODE="${SOAK_MODE:-fresh}" \
   SOAK_OUTPUT="$OUT_DIR/soak-artifacts" \
-  SESSIONS="${SOAK_SESSIONS:-20}" \
+  SESSIONS="${SOAK_SESSIONS:-10}" \
   TURNS="${SOAK_TURNS:-5}" \
   run_step soak "$OUT_DIR/soak.log" \
     bash "$ROOT_DIR/scripts/soak-test.sh"
