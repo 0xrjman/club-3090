@@ -89,7 +89,12 @@ choose() {
   done
   while true; do
     local pick
-    read -rp "Choice [1-${#labels[@]}]: " pick
+    if ! read -rp "Choice [1-${#labels[@]}]: " pick; then
+      echo "" >&2
+      echo "  EOF on stdin — wizard needs interactive input. Use --variant <name> to skip." >&2
+      kill -INT $$
+      exit 1
+    fi
     if [[ "$pick" =~ ^[0-9]+$ ]] && (( pick >= 1 && pick <= ${#labels[@]} )); then
       echo "${values[$((pick-1))]}"
       return
@@ -192,7 +197,12 @@ choose_variant() {
 
   while true; do
     local pick
-    read -rp "Choice [1-${#labels[@]}, default ${default_idx}]: " pick
+    if ! read -rp "Choice [1-${#labels[@]}, default ${default_idx}]: " pick; then
+      echo "" >&2
+      echo "  EOF on stdin — wizard needs interactive input. Use --variant <name> to skip." >&2
+      kill -INT $$
+      exit 1
+    fi
     pick="${pick:-$default_idx}"
     if [[ "$pick" =~ ^[0-9]+$ ]] && (( pick >= 1 && pick <= ${#labels[@]} )); then
       local status="${statuses[$((pick - 1))]}"
