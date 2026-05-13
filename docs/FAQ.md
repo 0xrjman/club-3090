@@ -130,9 +130,26 @@ If your numbers on the same compose look different from ours by >15%, the most l
 
 ## Setup
 
-### `bash scripts/setup.sh qwen3.6-27b` is downloading 20+ GB. Where does it go?
+### `bash scripts/setup.sh qwen3.6-27b` is downloading 20+ GB. Where does it go? / Can I put models on a different drive?
 
-`<repo>/models-cache/` by default. Override with `MODEL_DIR=/path/to/your/scratch bash scripts/setup.sh qwen3.6-27b`. See [`.env.example`](../.env.example) for all env vars.
+Yes. The knob is `MODEL_DIR`, with **four ways** to set it (priority order):
+
+1. **`MODEL_DIR` env var in your shell** — takes precedence over everything:
+   ```bash
+   export MODEL_DIR=/mnt/your-second-drive/models
+   bash scripts/setup.sh qwen3.6-27b
+   ```
+2. **`.env` file at repo root** — picked up automatically on every script run. See [`.env.example`](../.env.example).
+3. **Interactive prompt** — `bash scripts/setup.sh qwen3.6-27b` with nothing set offers three choices: in-repo default, `~/models`, or custom path. After you pick custom, it asks "Save `MODEL_DIR=/your/path` to `.env` so we skip this next time?" — say `Y` and it persists for every subsequent `launch.sh` / `switch.sh` / `bench.sh` call.
+4. **Silent fallback** — `<repo>/models-cache/`. Functional but pollutes the git tree; not recommended.
+
+Every script that touches model paths reads from the same `MODEL_DIR`. The compose YAMLs' volume mount is `${MODEL_DIR:-...}:/root/.cache/huggingface` — once set, every container reads + writes there.
+
+**HF env-var integration** — we don't directly respect `HF_HOME` / `HF_HUB_CACHE` because we mount a host directory INTO the container's `/root/.cache/huggingface`, not the host's HF cache. The internal layout inside `MODEL_DIR` matches HF's repo-cache convention (`<MODEL_DIR>/<repo-subdir>/`), so models downloaded by `setup.sh` are byte-compatible with anything that reads HF's local cache layout. Two clean workarounds if you already have an HF cache you want to reuse:
+- Set `MODEL_DIR=$HF_HOME/hub`
+- Or symlink between them
+
+**On Windows / WSL2** — same mechanism. Docker Desktop handles path translation. Use Windows paths (`D:\models`) from PowerShell or WSL paths (`/mnt/d/models`) from WSL. If you flip between Linux and Windows on the same rig, point `MODEL_DIR` at a drive both OSes can see — the model files themselves are OS-agnostic.
 
 ### How do I keep my install up-to-date?
 
