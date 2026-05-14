@@ -51,6 +51,85 @@ assert_contains "$out" "## Profile state"
 assert_contains "$out" "Active estate"
 assert_contains "$out" "qwen-left: llamacpp/default, GPUs [0], port 8110"
 
+BOOT_HOME="${TMP_DIR}/boot-home"
+out="$(
+  cd "$ROOT_DIR"
+  HOME="$BOOT_HOME" CLUB3090_FAKE_GPUS="$CLUB3090_FAKE_GPUS" python3 - "$GOOD" <<'PY'
+import argparse
+import sys
+import yaml
+
+from scripts.lib.profiles import estate_cli as ec
+
+events = []
+
+
+def fake_run_compose(inst, action):
+    if not ec.DEFAULT_ESTATE_PATH.exists():
+        raise AssertionError("default estate was not persisted before container action")
+    events.append(f"{action}:{inst.name}")
+
+
+def fake_wait_ready(inst, timeout):
+    events.append(f"ready:{inst.name}")
+
+
+ec.run_compose = fake_run_compose
+ec.wait_ready = fake_wait_ready
+
+rc = ec.command_boot(argparse.Namespace(file=sys.argv[1], only="club3090-qwen-left", timeout=1))
+if rc != 0:
+    raise SystemExit(rc)
+
+data = yaml.safe_load(ec.DEFAULT_ESTATE_PATH.read_text(encoding="utf-8"))
+print("default estate persisted")
+print(data["estate"][0]["name"])
+print(",".join(events))
+PY
+)"
+assert_contains "$out" "default estate persisted"
+assert_contains "$out" "qwen-left"
+assert_contains "$out" "up:qwen-left,ready:qwen-left"
+
+FAKE_BIN="${TMP_DIR}/fakebin"
+mkdir -p "$FAKE_BIN"
+cat > "${FAKE_BIN}/docker" <<'SH'
+#!/usr/bin/env bash
+args="$*"
+case "${1:-}" in
+  info)
+    if [[ "$args" == *"--format"* ]]; then
+      echo "/tmp/docker-root"
+    fi
+    exit 0
+    ;;
+  ps)
+    if [[ "$args" == *"{{.Names}}"* && "$args" == *"name=club3090-"* ]]; then
+      echo "club3090-llama-gpu0"
+    elif [[ "$args" == *"{{.Status}}"* && "$args" == *"name=club3090-llama-gpu0"* ]]; then
+      echo "Up 2 minutes"
+    elif [[ "$args" == *"{{.Ports}}"* && "$args" == *"name=club3090-llama-gpu0"* ]]; then
+      echo "0.0.0.0:8010->8010/tcp"
+    elif [[ "$args" == *"{{.Image}}"* && "$args" == *"name=club3090-llama-gpu0"* ]]; then
+      echo "ghcr.io/ggml-org/llama.cpp:server-cuda"
+    fi
+    exit 0
+    ;;
+  logs)
+    echo "build_info: fake llama.cpp"
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+SH
+chmod +x "${FAKE_BIN}/docker"
+
+out="$(PATH="${FAKE_BIN}:$PATH" HOME="${TMP_DIR}/report-home" bash "${ROOT_DIR}/scripts/report.sh" --no-redact 2>&1)"
+assert_contains "$out" "**Name:** \`club3090-llama-gpu0\`"
+assert_contains "$out" "**Engine:** \`llamacpp\`"
+
 GPU_COLLISION="${TMP_DIR}/estate-gpu-collision.yml"
 cat > "$GPU_COLLISION" <<'YAML'
 schema_version: 1

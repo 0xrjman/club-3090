@@ -397,6 +397,7 @@ if [[ -z "$CONTAINER" ]] && have docker && docker info >/dev/null 2>&1; then
   CONTAINER=$(docker ps --format '{{.Names}}' --filter 'name=vllm-qwen36' 2>/dev/null | head -1)
   [[ -z "$CONTAINER" ]] && CONTAINER=$(docker ps --format '{{.Names}}' --filter 'name=vllm-' 2>/dev/null | head -1)
   [[ -z "$CONTAINER" ]] && CONTAINER=$(docker ps --format '{{.Names}}' --filter 'name=llama-cpp-' 2>/dev/null | head -1)
+  [[ -z "$CONTAINER" ]] && CONTAINER=$(docker ps --format '{{.Names}}' --filter 'name=club3090-' 2>/dev/null | head -1)
 fi
 
 # Engine class — drives which probes run inside the container body. Inferred
@@ -407,12 +408,19 @@ case "${ENGINE_KIND:-}" in
     case "$CONTAINER" in
       vllm-*)      ENGINE_KIND="vllm" ;;
       llama-cpp-*) ENGINE_KIND="llamacpp" ;;
+      club3090-*)
+        container_image=$(docker ps --filter "name=$CONTAINER" --format '{{.Image}}' 2>/dev/null | head -1)
+        case "$container_image" in
+          *llama.cpp*|*llama-cpp*) ENGINE_KIND="llamacpp" ;;
+          *vllm*)                  ENGINE_KIND="vllm" ;;
+          *)                       ENGINE_KIND="unknown" ;;
+        esac ;;
       *)           ENGINE_KIND="unknown" ;;
     esac ;;
 esac
 
 if [[ -z "$CONTAINER" ]]; then
-  echo "_No vLLM or llama.cpp container running. Start one with \`bash scripts/launch.sh\` and re-run for the full report._"
+  echo "_No vLLM, llama.cpp, or estate container running. Start one with \`bash scripts/launch.sh\` and re-run for the full report._"
 else
   {
     status=$(docker ps --filter "name=$CONTAINER" --format '{{.Status}}' 2>/dev/null | head -1)

@@ -102,6 +102,10 @@ def estate_path(value: str | None) -> Path:
     return Path(value).expanduser() if value else DEFAULT_ESTATE_PATH
 
 
+def same_path(a: Path, b: Path) -> bool:
+    return a.expanduser().resolve(strict=False) == b.expanduser().resolve(strict=False)
+
+
 def parse_fake_gpus(value: str) -> list[GpuInfo]:
     out = []
     for raw in value.split(","):
@@ -306,6 +310,13 @@ def write_estate(path: Path, data: dict[str, Any]) -> None:
     os.replace(tmp, path)
 
 
+def persist_default_estate_source(path: Path, data: dict[str, Any], instances: list[InstanceSpec], gpus: list[GpuInfo], nvlink_active: bool) -> None:
+    if same_path(path, DEFAULT_ESTATE_PATH):
+        return
+    write_estate(DEFAULT_ESTATE_PATH, estate_doc(instances, gpus, nvlink_active, data))
+    print(f"[estate] wrote {DEFAULT_ESTATE_PATH} from {path}")
+
+
 def compose_abs_path(compose_name: str) -> Path:
     entry = COMPOSE_REGISTRY.get(compose_name)
     if not entry:
@@ -392,11 +403,15 @@ def wait_ready(inst: InstanceSpec, timeout: int) -> None:
 def select_instances(instances: list[InstanceSpec], only: set[str] | None) -> list[InstanceSpec]:
     if not only:
         return instances
-    known = {inst.name for inst in instances}
-    missing = sorted(only - known)
+    aliases: dict[str, InstanceSpec] = {}
+    for inst in instances:
+        aliases[inst.name] = inst
+        aliases[container_name(inst.name)] = inst
+    missing = sorted(name for name in only if name not in aliases)
     if missing:
         raise EstateCliError(f"--only references unknown instance(s): {', '.join(missing)}")
-    return [inst for inst in instances if inst.name in only]
+    selected_names = {aliases[name].name for name in only}
+    return [inst for inst in instances if inst.name in selected_names]
 
 
 def command_validate(args: argparse.Namespace) -> int:
@@ -412,11 +427,12 @@ def command_validate(args: argparse.Namespace) -> int:
 def command_boot(args: argparse.Namespace) -> int:
     path = estate_path(args.file)
     try:
-        _, _, instances, _, _, _, _, result = validate_doc(path)
+        _, data, instances, _, gpus, nvlink_active, _, result = validate_doc(path)
         print_validation_summary(instances, result)
         if not result.valid:
             return 1
         selected = select_instances(instances, parse_only(args.only))
+        persist_default_estate_source(path, data, instances, gpus, nvlink_active)
         total = len(selected)
         for i, inst in enumerate(selected, start=1):
             print(f"[estate] [{i}/{total}] booting {inst.name}: {inst.compose_name} GPUs={list(inst.gpu_indices)} port={inst.port}")
