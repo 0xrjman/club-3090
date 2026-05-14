@@ -1,0 +1,397 @@
+name: Build vLLM Club3090 Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_image:
+        description: "Upstream vLLM image to vendor overlays into"
+        required: false
+        default: "vllm/vllm-openai:nightly-1acd67a795ebccdf9b9db7697ae9082058301657"
+      smoke:
+        description: "GPU smoke behavior"
+        required: false
+        default: "auto"
+        type: choice
+        options:
+          - auto
+          - skip
+          - required
+  schedule:
+    - cron: "0 0 * * 0"
+  push:
+    branches:
+      - master
+    tags:
+      - "v0.7.*"
+      - "v0.[8-9].*"
+      - "v[1-9]*"
+    paths:
+      - ".github/workflows/build-vllm-image.yml"
+      - "docker/vllm-club3090/**"
+      - "models/qwen3.6-27b/vllm/patches/**"
+      - "models/gemma-4-31b/vllm/patches/**"
+
+concurrency:
+  group: build-vllm-club3090-image
+  cancel-in-progress: false
+
+permissions:
+  actions: read
+  contents: read
+  packages: write
+
+env:
+  IMAGE_NAME: ghcr.io/noonghunna/vllm-club3090
+  DEFAULT_VLLM_BASE_IMAGE: vllm/vllm-openai:nightly-1acd67a795ebccdf9b9db7697ae9082058301657
+  CANONICAL_COMPOSE: models/qwen3.6-27b/vllm/compose/dual/docker-compose.yml
+
+jobs:
+  build:
+    name: Build and push dated image
+    runs-on: ubuntu-latest
+    outputs:
+      image_ref: ${{ steps.meta.outputs.image_ref }}
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+      tags: ${{ steps.meta.outputs.tags }}
+      upstream_image: ${{ steps.meta.outputs.upstream_image }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute image metadata
+        id: meta
+        shell: bash
+        env:
+          INPUT_UPSTREAM_IMAGE: ${{ inputs.upstream_image }}
+        run: |
+          set -euo pipefail
+
+          upstream_image="${INPUT_UPSTREAM_IMAGE:-${DEFAULT_VLLM_BASE_IMAGE}}"
+          date_tag="$(date -u +%Y%m%d)"
+          counter="$(printf "%04d" "${GITHUB_RUN_NUMBER}")"
+          image_tag="nightly-${date_tag}-club${counter}"
+          image_ref="${IMAGE_NAME}:${image_tag}"
+
+          {
+            echo "upstream_image=${upstream_image}"
+            echo "image_tag=${image_tag}"
+            echo "image_ref=${image_ref}"
+            echo "tags<<EOF"
+            echo "${image_ref}"
+            if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+              echo "${IMAGE_NAME}:club-${GITHUB_REF_NAME}"
+            fi
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push dated image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/vllm-club3090/Dockerfile
+          platforms: linux/amd64
+          pull: true
+          push: true
+          build-args: |
+            VLLM_BASE_IMAGE=${{ steps.meta.outputs.upstream_image }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.image_tag }}
+            club3090.upstream_vllm_image=${{ steps.meta.outputs.upstream_image }}
+
+  detect-smoke-runner:
+    name: Detect self-hosted GPU runner
+    needs: build
+    runs-on: ubuntu-latest
+    outputs:
+      available: ${{ steps.detect.outputs.available }}
+      smoke_mode: ${{ steps.detect.outputs.smoke_mode }}
+    steps:
+      - name: Detect online gpu-labeled runner
+        id: detect
+        uses: actions/github-script@v7
+        env:
+          SMOKE_MODE: ${{ inputs.smoke || 'auto' }}
+        with:
+          script: |
+            const mode = process.env.SMOKE_MODE || "auto";
+            core.setOutput("smoke_mode", mode);
+
+            if (mode === "skip") {
+              core.notice("Smoke explicitly skipped. Dated image was pushed; aliases will not move.");
+              core.setOutput("available", "false");
+              return;
+            }
+
+            const runners = await github.paginate(
+              github.rest.actions.listSelfHostedRunnersForRepo,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 100,
+              },
+            );
+
+            const available = runners.some((runner) => {
+              const labels = runner.labels.map((label) => label.name.toLowerCase());
+              return runner.status === "online" &&
+                labels.includes("self-hosted") &&
+                labels.includes("gpu");
+            });
+
+            core.setOutput("available", available ? "true" : "false");
+            if (!available) {
+              const message = "No online self-hosted runner with label 'gpu' was found. Dated image was pushed; latest/nightly-stable were not moved.";
+              if (mode === "required") {
+                core.setFailed(message);
+              } else {
+                core.notice(message);
+              }
+            }
+
+  smoke:
+    name: GPU smoke and alias promotion
+    needs:
+      - build
+      - detect-smoke-runner
+    if: needs.detect-smoke-runner.outputs.available == 'true'
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - gpu
+    timeout-minutes: 120
+    env:
+      IMAGE_REF: ${{ needs.build.outputs.image_ref }}
+      IMAGE_NAME: ghcr.io/noonghunna/vllm-club3090
+      COMPOSE_PROJECT_NAME: club3090-ci-vllm-dual
+      COMPOSE_OVERRIDE: /tmp/club3090-ci-vllm-image.override.yml
+      URL: http://localhost:8010
+      MODEL: qwen3.6-27b-autoround
+      CONTAINER: vllm-qwen36-27b-dual
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare canonical compose override
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull "${IMAGE_REF}"
+          cat > "${COMPOSE_OVERRIDE}" <<EOF
+          services:
+            vllm-qwen36-27b-dual:
+              image: ${IMAGE_REF}
+          EOF
+
+      - name: Stop prior club-3090 estate if present
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f "${HOME}/.club3090/estate.yml" ]]; then
+            bash scripts/launch.sh --down-estate "${HOME}/.club3090/estate.yml" || true
+          fi
+          docker compose \
+            -f "${CANONICAL_COMPOSE}" \
+            -f "${COMPOSE_OVERRIDE}" \
+            -p "${COMPOSE_PROJECT_NAME}" \
+            down --remove-orphans || true
+
+      - name: Boot canonical dual vLLM compose
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose \
+            -f "${CANONICAL_COMPOSE}" \
+            -f "${COMPOSE_OVERRIDE}" \
+            -p "${COMPOSE_PROJECT_NAME}" \
+            up -d
+
+      - name: Wait for OpenAI endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          for _ in {1..120}; do
+            if curl -sf -m 5 "${URL}/v1/models" >/dev/null; then
+              exit 0
+            fi
+            sleep 10
+          done
+          docker compose \
+            -f "${CANONICAL_COMPOSE}" \
+            -f "${COMPOSE_OVERRIDE}" \
+            -p "${COMPOSE_PROJECT_NAME}" \
+            logs --tail=200
+          exit 1
+
+      - name: Run verify-full
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="${URL}" MODEL="${MODEL}" CONTAINER="${CONTAINER}" bash scripts/verify-full.sh
+
+      - name: Run 3-prompt smoke bench
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import time
+          import urllib.request
+
+          url = "http://localhost:8010"
+          model = "qwen3.6-27b-autoround"
+          prompts = [
+              ("narrative", "Write a concise paragraph explaining transformer attention.", 96),
+              ("code", "Write a small Python function that returns the nth Fibonacci number.", 96),
+              ("reasoning", "A train leaves at 08:00 traveling 60 km/h. Another leaves at 09:00 traveling 90 km/h. When does the second catch up?", 96),
+          ]
+
+          for label, prompt, max_tokens in prompts:
+              body = json.dumps({
+                  "model": model,
+                  "messages": [{"role": "user", "content": prompt}],
+                  "max_tokens": max_tokens,
+                  "temperature": 0.3,
+                  "stream": False,
+                  "chat_template_kwargs": {"enable_thinking": False},
+              }).encode()
+              req = urllib.request.Request(
+                  f"{url}/v1/chat/completions",
+                  data=body,
+                  headers={"Content-Type": "application/json"},
+              )
+              start = time.time()
+              with urllib.request.urlopen(req, timeout=300) as response:
+                  data = json.load(response)
+              wall = time.time() - start
+              usage = data.get("usage") or {}
+              tokens = usage.get("completion_tokens") or 0
+              text = data["choices"][0]["message"].get("content") or ""
+              if not text.strip():
+                  raise SystemExit(f"{label}: empty completion")
+              tps = tokens / wall if wall > 0 else 0
+              print(f"{label}: wall={wall:.2f}s completion_tokens={tokens} wall_TPS={tps:.2f}")
+          PY
+
+      - name: Promote latest aliases
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker tag "${IMAGE_REF}" "${IMAGE_NAME}:latest"
+          docker tag "${IMAGE_REF}" "${IMAGE_NAME}:nightly-stable"
+          docker push "${IMAGE_NAME}:latest"
+          docker push "${IMAGE_NAME}:nightly-stable"
+
+      - name: Cleanup canonical compose
+        if: always()
+        shell: bash
+        run: |
+          docker compose \
+            -f "${CANONICAL_COMPOSE}" \
+            -f "${COMPOSE_OVERRIDE}" \
+            -p "${COMPOSE_PROJECT_NAME}" \
+            down --remove-orphans || true
+
+  retention:
+    name: Retain four weeks of dated nightlies
+    needs: build
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete old dated nightly package versions
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const packageType = "container";
+            const packageName = "vllm-club3090";
+            const cutoff = Date.now() - 28 * 24 * 60 * 60 * 1000;
+
+            async function listVersions(scope) {
+              if (scope === "org") {
+                return github.paginate("GET /orgs/{org}/packages/{package_type}/{package_name}/versions", {
+                  org: context.repo.owner,
+                  package_type: packageType,
+                  package_name: packageName,
+                  per_page: 100,
+                });
+              }
+              return github.paginate("GET /users/{username}/packages/{package_type}/{package_name}/versions", {
+                username: context.repo.owner,
+                package_type: packageType,
+                package_name: packageName,
+                per_page: 100,
+              });
+            }
+
+            async function deleteVersion(scope, id) {
+              if (scope === "org") {
+                return github.request("DELETE /orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}", {
+                  org: context.repo.owner,
+                  package_type: packageType,
+                  package_name: packageName,
+                  package_version_id: id,
+                });
+              }
+              return github.request("DELETE /users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id}", {
+                username: context.repo.owner,
+                package_type: packageType,
+                package_name: packageName,
+                package_version_id: id,
+              });
+            }
+
+            let scope = "org";
+            let versions = [];
+            try {
+              versions = await listVersions(scope);
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              scope = "user";
+              try {
+                versions = await listVersions(scope);
+              } catch (userError) {
+                if (userError.status === 404) {
+                  core.notice(`Package ${packageName} does not exist yet; retention skipped.`);
+                  return;
+                }
+                throw userError;
+              }
+            }
+
+            for (const version of versions) {
+              const tags = version.metadata?.container?.tags || [];
+              if (tags.length === 0) continue;
+
+              const protectedTag = tags.some((tag) =>
+                tag === "latest" ||
+                tag === "nightly-stable" ||
+                tag.startsWith("club-v")
+              );
+              const datedNightly = tags.some((tag) => /^nightly-\d{8}-club\d{4,}$/.test(tag));
+              const updatedAt = new Date(version.updated_at).getTime();
+
+              if (datedNightly && !protectedTag && updatedAt < cutoff) {
+                core.notice(`Deleting old ${packageName} package version ${version.id}: ${tags.join(", ")}`);
+                await deleteVersion(scope, version.id);
+              }
+            }
