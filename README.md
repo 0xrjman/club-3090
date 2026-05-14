@@ -66,6 +66,9 @@ Bench protocol: 3 warm + 5 measured runs of the canonical narrative + code promp
 git clone https://github.com/noonghunna/club-3090.git
 cd club-3090
 
+# Profile compatibility tooling requires PyYAML. Ubuntu LTS usually has it via
+# python3-yaml; otherwise run: python3 -m pip install pyyaml
+
 # 2. Pick/download + SHA-verify the model (interactive hardware-aware picker)
 #    (asks you which model, then where to put model weights — pick in-repo
 #     default, ~/models, or a custom path on a different drive. To skip prompts:
