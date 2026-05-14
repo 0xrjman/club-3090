@@ -16,6 +16,52 @@ history; SemVer takes over from `v0.3.0` onward.
 
 ---
 
+## v0.7.0 — 2026-05-14
+
+
+### ✨ Features
+
+- feat(scripts): add diagnose-profile triage ([c2adb39](https://github.com/noonghunna/club-3090/commit/c2adb3970dbdcb3bf227cfc7a1ac58a2de3930a4))
+- feat(compose): use profile-sourced vllm image pins ([e6e33ab](https://github.com/noonghunna/club-3090/commit/e6e33ab37235cdfa2d47987e16e00d617564e55d))
+- feat(launch): export profile vllm pins ([c306383](https://github.com/noonghunna/club-3090/commit/c3063838bfde3f7811db3edbb9541814aea8f09d))
+- feat(profiles): resolve vllm nightly pins ([40f1ef7](https://github.com/noonghunna/club-3090/commit/40f1ef78f8e3ab80a5424ce196c7715df85a0d1a))
+- feat(launch): add estate planner orchestration ([c9b153f](https://github.com/noonghunna/club-3090/commit/c9b153f91f3dd4a076395008ad3bfecdd226a452))
+- feat(launch): validate single-model profiles ([a142b1c](https://github.com/noonghunna/club-3090/commit/a142b1ce1085c78e8752fa52718af66f7a49f237))
+- feat(compat): add profile validator and estate self-test ([6581ccc](https://github.com/noonghunna/club-3090/commit/6581ccca9e8613594dba876ba2472e78d48c9eed))
+- feat(compose): accept ESTATE_GPUS and ESTATE_PORT overrides ([a57596e](https://github.com/noonghunna/club-3090/commit/a57596e0764babc6fe91e96af8b6dd746da45e09))
+- feat(profiles): ship v0.7.0 data layer ([69825d7](https://github.com/noonghunna/club-3090/commit/69825d7dae0fe1387a04879b31e0d225143b3684))
+
+
+### 🐛 Bug fixes
+
+- fix(tools): resolve profile image pins in audit ([98535dc](https://github.com/noonghunna/club-3090/commit/98535dc81453e54be03a1f5915bb2367ebab5c27))
+- fix(tools): bump engine nightly profiles ([d1acde0](https://github.com/noonghunna/club-3090/commit/d1acde0b28eccb123338d2a9d94e4ef6ff75cc4b))
+- fix(ci): keep vllm base arg in image metadata ([1abe65f](https://github.com/noonghunna/club-3090/commit/1abe65fe2810be594d6890ce0f26a3f0a554075f))
+- fix(launch): persist estate source of truth ([52e4347](https://github.com/noonghunna/club-3090/commit/52e43470c6ee111dfa97be81e13e229ede715073))
+
+
+### 📝 Documentation
+
+- docs: document profile-sourced vllm pins ([86445be](https://github.com/noonghunna/club-3090/commit/86445be3e8c24ad829d45c4f1702a0bccf27e4dc))
+- docs: document club vllm image pin ([2ae8303](https://github.com/noonghunna/club-3090/commit/2ae8303833497f20d4079a12226ca23c83f71337))
+- docs: expand KV_MATH + add ADDING_MODELS workflow ([1f8aaa2](https://github.com/noonghunna/club-3090/commit/1f8aaa2acc72a7cff763fa81ae938d552fffffb2))
+- docs(hardware): clarify 3090 stock TDP varies by board SKU ([0d59f94](https://github.com/noonghunna/club-3090/commit/0d59f949e472095e3ecb83ce133eb103d10588d9))
+
+
+### 🧹 Maintenance
+
+- chore(vllm): use club3090 image in composes ([aebc4f3](https://github.com/noonghunna/club-3090/commit/aebc4f321c3536943bfbd554d2c21ed6824742f9))
+- chore(ci): build club vllm image ([e88a2a8](https://github.com/noonghunna/club-3090/commit/e88a2a8d21efd3556739fcb0fb1a26327b7d38cd))
+- refactor(kv-calc): consume profile data ([9ccde62](https://github.com/noonghunna/club-3090/commit/9ccde62abe360bfb9170fc88102623dc5e87597e))
+
+
+### 🧹 Other
+
+- Revert "chore(vllm): use club3090 image in composes" ([c7c40bd](https://github.com/noonghunna/club-3090/commit/c7c40bdf1232ec2a2f8e5b1d98249df33026f46b))
+
+
+
+[Pin: `git checkout v0.7.0`] · [Full diff](https://github.com/noonghunna/club-3090/compare/v0.6.3...v0.7.0)
 ## v0.6.3 — 2026-05-14
 
 
