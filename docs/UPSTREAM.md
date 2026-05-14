@@ -43,23 +43,28 @@ See the platform-specific tables below for the rows these reference.
 
 What container image each compose pins, why each pin exists, and which pins
 are candidates for retirement when their reason resolves. This section answers
-"why do we have N distinct vLLM nightlies cached" and drives the work in
+"which engine images are users actually booting" and drives the work in
 [`NIGHTLY_BUMP_RUNBOOK.md`](./NIGHTLY_BUMP_RUNBOOK.md).
 
 Run `bash scripts/maintenance/list-image-pins.sh` for a live snapshot.
 
 | Pin | Composes using it | Reason for pin | Retirement candidate? |
 |---|---|---|---|
-| `vllm/vllm-openai:nightly-01d4d1ad` | 19 (all Qwen 3.6-27B) | Working baseline for Marlin-pad patch + Genesis v7.51 + Qwen 3.6-27B AutoRound. | When Marlin PR #40361 merges + propagates to a newer nightly, bump to that nightly + drop the Marlin patch mount. Tracked in vLLM section below. |
-| `vllm/vllm-openai:nightly-1acd67a7` | 4 (Gemma 4 base / AWQ / INT8) | Post PR #41745 merge — Gemma 4 MTP "assistant" drafter. | When PR #42102 (DFlash + KV-quant unblock) propagates AND PR #40391 (per-head KV) absorbs, can consolidate with `nightly-e47c98ef` to a single Gemma pin. |
-| `vllm/vllm-openai:nightly-e47c98ef` | 2 (Gemma 4 DFlash + DFlash-INT8) | Working baseline for our DFlash + DFlash-INT8 patch stack. Heaviest patch surface (~25 patched files spanning `v1/spec_decode/`, `v1/attention/`, `v1/worker/`). | When PR #42102 lands + DFlash patches absorb upstream, this pin retires. Until then, **do not bump blindly** — the patches are tightly coupled to this nightly's internals. |
+| `ghcr.io/noonghunna/vllm-club3090:latest` | 28 (all vLLM composes) | v0.7.0 pre-built vLLM image. CI vendors the required overlay set into the image (`#40361`, `#35936`, `#41703`, `#42102`) and only moves `latest` / `nightly-stable` after GPU smoke passes. | Retire individual overlays as their upstream PRs merge and propagate into the base nightly, then rebuild the club image with a smaller overlay surface. |
 | `ghcr.io/ggml-org/llama.cpp:server-cuda` | 2 (Qwen 3.6-27B llama-cpp) | Stable tag, no hash drift on upstream side. No patches mounted. | Not a retirement candidate — drift-free. Capture digest if reproducibility matters. |
 
 **Retirement workflow:** see [`NIGHTLY_BUMP_RUNBOOK.md`](./NIGHTLY_BUMP_RUNBOOK.md).
 
 ### Retired pins
 
-(none yet — first entry will land when the first consolidation happens)
+The vLLM composes no longer boot upstream images directly. These upstream pins
+are retained here as historical build inputs / overlay baselines:
+
+| Pin | Former use | Notes |
+|---|---|---|
+| `vllm/vllm-openai:nightly-01d4d1ad` | Qwen 3.6-27B Genesis baseline | Superseded by the club image migration. |
+| `vllm/vllm-openai:nightly-1acd67a7` | Qwen and Gemma MTP baseline | Current default club image build input unless overridden in CI. |
+| `vllm/vllm-openai:nightly-e47c98ef` | Gemma 4 DFlash / DFlash-INT8 overlay baseline | Folded into the vendored DFlash overlay surface. |
 
 ---
 
