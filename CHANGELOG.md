@@ -16,6 +16,16 @@ history; SemVer takes over from `v0.3.0` onward.
 
 ---
 
+## v0.6.2 — 2026-05-14
+
+
+### 🐛 Bug fixes
+
+- fix(launch): project TP greater than four ([98f0406](https://github.com/noonghunna/club-3090/commit/98f0406d0f265767b4a6712a1eba293b1e2dc889))
+
+
+
+[Pin: `git checkout v0.6.2`] · [Full diff](https://github.com/noonghunna/club-3090/compare/v0.6.1...v0.6.2)
 ## v0.6.1 — 2026-05-14
 
 
