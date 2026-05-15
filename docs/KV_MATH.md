@@ -502,7 +502,7 @@ Total growing-KV pool per card = `per_token_bytes_growing / TP × max_ctx × max
 The 50 sliding-attention layers maintain a fixed-size KV window (`sliding_window=1024`). K==V tying applies here too:
 
 ```
-sliding_kv_bytes_total = 50 (sliding layers) × 16 (kv_heads) × 256 (head_dim) × 1 (K=V tied) × bpe × 1024 (window)
+sliding_kv_bytes_total = 50 (sliding layers) × 16 (kv_heads) × 256 (head_dim) × k_v_tensors=1 × bpe × 1024 (window)
                        = 209,715,200 × bpe bytes
                        ≈ 200 MB × bpe
 ```
@@ -606,7 +606,7 @@ This means BF16 KV becomes viable at 262K on Ampere consumer cards (~1.3 GB grow
 The 25 SWA layers maintain a fixed-size KV window (`sliding_window: 1024`):
 
 ```
-sliding_kv_bytes_total = num_sliding_layers × num_kv_heads × head_dim × 1 (K=V tied) × bpe × sliding_window
+sliding_kv_bytes_total = num_sliding_layers × num_kv_heads × head_dim × k_v_tensors=1 × bpe × sliding_window
                        = 25 × 8 × 256 × 1 × bpe × 1024
                        = 52,428,800 × bpe bytes
                        ≈ 50 MB × bpe
