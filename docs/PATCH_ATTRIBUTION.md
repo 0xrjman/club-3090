@@ -100,3 +100,25 @@ Run the audit with:
 ```bash
 bash scripts/tests/test-patch-attribution.sh
 ```
+
+### Reusable core: `scripts/lib/profiles/patch_attribution.py` (v0.8.0 STEP 2)
+
+The attribution logic that used to live embedded inside
+`test-patch-attribution.sh` is extracted into
+`scripts/lib/profiles/patch_attribution.py` so the #141 generator (STEP 3)
+and the test share one implementation. The test now imports it
+(`load`, `compose_text`, `gap_declared`, `reaches`, `c0_state`, the
+schema/coverage helpers, and the schema key-sets) and asserts identically
+— same `PASS: 61 patch entries, 11 arch rows, 18 calibration seeds`
+summary and the same known-delivery-gaps list.
+
+`reaches(root, patch, name_or_abs_path)` is now **sound** (brief v9
+correction #4): it probes the **comment-stripped service body only**
+(everything from the top-level `services:` key onward, with whole-line
+and inline `#` comments removed) and validates the patch's **actual
+`delivery_spec` wiring** — the declared volume-mount target(s) and/or
+entrypoint invoke at the `wired_at` insertion point(s) — instead of a
+bare `patch["id"] in text` substring. A patch ID merely named in the
+file-header banner or the generator's own header WARNING block can no
+longer register as reached. It accepts a `COMPOSE_REGISTRY` profile name
+**or** an arbitrary absolute path to a compose file.
