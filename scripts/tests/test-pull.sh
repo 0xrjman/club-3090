@@ -140,6 +140,72 @@ def ff_derived(slug, cfg, weight_gb=8.0):
 
 
 CURATED_SLUG = "Lorbus/Qwen3.6-27B-int4-AutoRound"
+CURATED_MODEL_ID = "qwen3.6-27b"           # Tier-1 curated model CURATED_SLUG resolves to
+CURATED_VARIANT = "autoround_int4"          # variant CURATED_SLUG resolves to
+
+# ---------------------------------------------------------------------------
+# NON-MOCKED kv-calc parameterization.
+#
+# The pre-fix bug: `_curated_spec` priced Tier-1 curated hits through P1's
+# conservative generic-dense LOWER-BOUND instead of the model's authoritative
+# curated-exact family branch. The mocked truth-table never ran the real
+# `_curated_spec` -> real `kv.raw_verdict` for a curated model, so a curated
+# config that genuinely FITS got a false hard-block and every test stayed
+# green.
+#
+# This helper derives the EXPECTED Pull-Gate `[B]` raw_verdict + `[C1]`
+# terminal for a curated `(model_id, variant, profile-like)` straight from
+# kv-calc's OWN authoritative curated-exact spec (`kv.MODEL_SPECS[...]`, the
+# same specs `tools/kv-calc.py --calibration` validates at 22/22) and a LIVE
+# `kv.predict()` call. Expectations are parameterized off kv-calc itself, so
+# the Pull-Gate `[B]` verdict can NEVER silently diverge from kv-calc again
+# (a divergence becomes a hard FAIL here, not a frozen-buggy green).
+# ---------------------------------------------------------------------------
+import importlib.util as _ilu  # noqa: E402
+
+_kv_path = root / "tools" / "kv-calc.py"
+_kv_spec = _ilu.spec_from_file_location("kv_calc", _kv_path)
+_KVC = _ilu.module_from_spec(_kv_spec)
+sys.modules["kv_calc"] = _KVC          # MUST precede exec_module (@dataclass)
+_kv_spec.loader.exec_module(_KVC)
+
+sys.path.insert(0, str(root / "scripts" / "lib" / "profiles"))
+from compose_registry import COMPOSE_REGISTRY as _COMPOSE_REGISTRY  # noqa: E402
+
+# kv-calc raw_verdict -> Pull-Gate raw_verdict; then §4.1 exact-row terminal.
+_RAWMAP = {"PASS": "fits-clean", "TIGHT": "fits-constrained",
+           "FAIL": "wont-fit"}
+_EXACT_TERMINAL = {  # confidence == "exact" rows of the §4.1 table
+    "fits-clean": "proceed",
+    "fits-constrained": "confirm→proceed",
+    "wont-fit": "hard-block",
+}
+
+
+def curated_exact_expectation(profile_like: str,
+                              model_id: str = CURATED_MODEL_ID,
+                              variant: str = CURATED_VARIANT):
+    """Return (expected_raw_verdict, expected_exact_terminal) computed LIVE
+    from kv-calc's authoritative curated-exact spec — never hardcoded."""
+    mm = _COMPOSE_REGISTRY[profile_like]
+    spec = dict(_KVC.MODEL_SPECS[model_id])  # authoritative; copy
+    assert spec["model_family"] != "generic-dense", (
+        f"{model_id} curated-exact spec must NOT be generic-dense")
+    size_gb = profiles.models[model_id].weights[variant].get("size_gb")
+    if isinstance(size_gb, (int, float)) and float(size_gb) > 0:
+        spec["weights_total_gb"] = float(size_gb)  # qwen3-next-hybrid weight field
+    p = _KVC.predict(
+        spec=spec,
+        kv_format=mm["kv_format"],
+        max_ctx=int(mm["max_ctx"]),
+        max_num_seqs=int(mm["max_num_seqs"] or 1),
+        tp=int(mm["tp"]),
+        mem_util=float(mm["mem_util"] or 0.95),
+        vram_gb=24,
+    )
+    rv = _RAWMAP[p.verdict]
+    return rv, _EXACT_TERMINAL[rv]
+
 
 # ===========================================================================
 # SECTION 1 — [C1] §4.1 TOTAL FUNCTION: all 9 cells × flag interactions.
@@ -618,35 +684,53 @@ check(r.path == "B" and not r.emitted and r.compose_text is None,
 check(not os.path.exists("/tmp/_no.yml"),
       "g8: Path B wrote NO compose file even with --out (never emits)")
 
-# g2: Path-A effective-capped (fits-constrained) -> exact×fits-constrained
-# -> confirm→proceed; with --yes -> "known effective-cap warning"
-# (NOT 'applied constraint'; no rewrite) -> [D] dry-run -> emit.
+# g2: Path-A curated `vllm/dual` -> [C1] terminal is whatever the
+# AUTHORITATIVE curated-exact kv-calc spec prices it (parameterized — NOT
+# hardcoded; can never silently diverge from kv-calc). When the curated-exact
+# verdict is download-eligible, --yes (when the §4.1 row needs it) -> [D]
+# dry-run -> emit; the non-silent rows still require --yes.
 OUT = "/tmp/_pull_g2.yml"
 if os.path.exists(OUT):
     os.unlink(OUT)
+g2_rv, g2_term = curated_exact_expectation("vllm/dual")
+g2_silent = (g2_term == "proceed")          # only exact×fits-clean is silent
 r = P.run_pull(CURATED_SLUG, "vllm/dual", path="A", out=OUT,
                 hardware_sm=SM_86, fetcher=NoNet(), profiles=profiles,
                 statvfs=BIG_DISK, yes=True)
-check(r.ok and r.path == "A" and r.raw_verdict == "fits-constrained"
-      and r.terminal == "confirm→proceed" and r.emitted,
-      f"g2: Path-A curated fits-constrained + --yes -> confirm→proceed "
-      f"-> [D] emit (ok={r.ok}, verdict={r.raw_verdict}, "
-      f"terminal={r.terminal}, emitted={r.emitted})")
-cap_notice = [n for n in r.notices if "effective-cap warning" in n]
-check(cap_notice and "no compose config rewritten" in cap_notice[0]
-      and "applied constraint" not in cap_notice[0],
-      "g2: prints 'known effective-cap warning' (NOT 'applied "
-      "constraint'; no rewrite)")
-# without --yes -> NOT satisfied (honest non-pass, needs --yes).
+check(r.ok and r.path == "A" and r.raw_verdict == g2_rv
+      and r.terminal == g2_term and r.emitted,
+      f"g2: Path-A curated vllm/dual + --yes -> kv-calc curated-exact "
+      f"verdict={g2_rv} terminal={g2_term} -> [D] emit "
+      f"(ok={r.ok}, verdict={r.raw_verdict}, terminal={r.terminal}, "
+      f"emitted={r.emitted})")
+if g2_rv == "fits-constrained":
+    # fits-constrained invariant: surfaces the known effective-cap warning
+    # (NOT 'applied constraint'; no rewrite). Only assertable when kv-calc
+    # actually prices this curated config constrained.
+    cap_notice = [n for n in r.notices if "effective-cap warning" in n]
+    check(cap_notice and "no compose config rewritten" in cap_notice[0]
+          and "applied constraint" not in cap_notice[0],
+          "g2: fits-constrained prints 'known effective-cap warning' "
+          "(NOT 'applied constraint'; no rewrite)")
+# without --yes: a non-silent terminal is NOT satisfied (needs --yes); a
+# silent exact×fits-clean `proceed` IS satisfied even without --yes.
 r2 = P.run_pull(CURATED_SLUG, "vllm/dual", path="A", out=OUT + ".x",
                  hardware_sm=SM_86, fetcher=NoNet(), profiles=profiles,
                  statvfs=BIG_DISK)
-check(not r2.ok and not r2.emitted
-      and r2.abort_reason.startswith("confirm→proceed"),
-      f"g2: Path-A fits-constrained WITHOUT --yes -> NOT eligible, "
-      f"NO [D] (reason={r2.abort_reason})")
-check(not os.path.exists(OUT + ".x"),
-      "g2: a non-satisfied confirm→proceed emits NO compose file")
+if g2_silent:
+    check(r2.ok and r2.emitted and r2.terminal == "proceed",
+          f"g2: Path-A curated vllm/dual silent {g2_term} -> eligible "
+          f"WITHOUT --yes (ok={r2.ok}, emitted={r2.emitted})")
+    check(os.path.exists(OUT + ".x"),
+          "g2: a satisfied silent proceed wrote the compose file")
+    os.unlink(OUT + ".x")
+else:
+    check(not r2.ok and not r2.emitted
+          and r2.abort_reason.startswith(g2_term),
+          f"g2: Path-A curated vllm/dual non-silent {g2_term} WITHOUT "
+          f"--yes -> NOT eligible, NO [D] (reason={r2.abort_reason})")
+    check(not os.path.exists(OUT + ".x"),
+          "g2: a non-satisfied non-silent terminal emits NO compose file")
 
 # g1: Path-A curated, gate-passing, [D] dry-run ok -> proceed → [D] invoked.
 # (We use the satisfied confirm→proceed above as the integration analogue
@@ -686,19 +770,71 @@ check(r.stratum is P.Stratum.D_DRY_RUN
 check(not os.path.exists(OUT + ".g15"),
       "g15: a [D]-refused dry-run wrote NO compose file")
 
-# g3: Path-A profile too big -> exact×wont-fit -> hard-block; no [D].
-# vllm/minimal is tp=1 + emittable + model/variant-matches curated qwen;
-# the curated generic-dense spec at tp=1 prices wont-fit -> exact (curated)
-# × wont-fit -> hard-block (no flag clears it, no [D]).
+# g3: Path-A curated `vllm/minimal` -> [C1] terminal is whatever the
+# AUTHORITATIVE curated-exact kv-calc spec prices it (parameterized — NOT
+# hardcoded; can never silently freeze a misprice again). The structural
+# invariant under test: exact×wont-fit is an UNCLEARABLE hard-block (no flag
+# clears it, no [D]); a download-eligible curated-exact verdict emits.
+g3_rv, g3_term = curated_exact_expectation("vllm/minimal")
 r = P.run_pull(CURATED_SLUG, "vllm/minimal", path="A", out=OUT + ".g3",
                 hardware_sm=SM_86, fetcher=NoNet(), profiles=profiles,
                 statvfs=BIG_DISK, yes=True, force_download=True)
-check(r.terminal == "hard-block" and not r.ok and not r.emitted
-      and r.abort_reason == "hard-block",
-      f"g3: Path-A exact×wont-fit -> hard-block, NO [D] (even with "
-      f"--yes --force-download) (terminal={r.terminal}, ok={r.ok})")
-check(not os.path.exists(OUT + ".g3"),
-      "g3: hard-block wrote NO compose file")
+check(r.terminal == g3_term,
+      f"g3: Path-A curated vllm/minimal terminal == kv-calc curated-exact "
+      f"({g3_rv} -> {g3_term}); got {r.terminal}")
+if g3_rv == "wont-fit":
+    check(not r.ok and not r.emitted and r.abort_reason == "hard-block",
+          f"g3: exact×wont-fit -> hard-block UNCLEARABLE even with --yes "
+          f"--force-download, NO [D] (ok={r.ok}, "
+          f"reason={r.abort_reason})")
+    check(not os.path.exists(OUT + ".g3"),
+          "g3: hard-block wrote NO compose file")
+else:
+    check(r.ok and r.emitted,
+          f"g3: curated-exact download-eligible ({g3_term}) -> [D] emit "
+          f"(ok={r.ok}, emitted={r.emitted})")
+    check(os.path.exists(OUT + ".g3"),
+          "g3: a download-eligible curated terminal wrote the compose")
+
+# ---------------------------------------------------------------------------
+# P4-fix REGRESSION (NON-MOCKED): Tier-1 curated hit must be priced through
+# the model's authoritative curated-exact kv-calc family branch, NOT P1's
+# conservative generic-dense lower-bound.
+#
+# This drives the REAL `run_pull` -> REAL `_curated_spec` -> REAL
+# `kv.raw_verdict` (real kv-calc) for a Tier-1 curated `(slug, profile-like)`
+# pair (no FixtureFetcher for the verdict; NoNet proves it stays network-free)
+# and asserts the Pull-Gate `[B]` raw_verdict + `[C1]` terminal EQUAL kv-calc's
+# OWN curated-exact `predict()` mapped through FAIL/TIGHT/PASS ->
+# wont-fit/fits-constrained/fits-clean. Pre-fix: `_curated_spec` emitted
+# model_family="generic-dense" -> wont-fit -> false `hard-block` (no compose).
+# Expectation is parameterized off `kv.predict()` + `kv.MODEL_SPECS[...]`, so
+# the gate can NEVER silently diverge from kv-calc again. Both curated vLLM
+# profiles for this model FIT under curated-exact pricing -> NOT a false
+# hard-block (the proven symptom this fix closes).
+for _pl in ("vllm/minimal", "vllm/dual"):
+    exp_rv, exp_term = curated_exact_expectation(_pl)
+    _o = f"/tmp/_pull_p4fix_{_pl.replace('/', '_')}.yml"
+    if os.path.exists(_o):
+        os.unlink(_o)
+    rr = P.run_pull(CURATED_SLUG, _pl, path="A", out=_o,
+                     hardware_sm=SM_86, fetcher=NoNet(), profiles=profiles,
+                     statvfs=BIG_DISK, yes=True)
+    check(rr.raw_verdict == exp_rv,
+          f"P4-fix[{_pl}]: Pull-Gate [B] raw_verdict == kv-calc "
+          f"curated-exact ({exp_rv}); got {rr.raw_verdict} "
+          f"(curated model NOT priced as generic-dense)")
+    check(rr.terminal == exp_term,
+          f"P4-fix[{_pl}]: [C1] terminal == kv-calc-derived exact-row "
+          f"terminal ({exp_term}); got {rr.terminal}")
+    if exp_rv != "wont-fit":
+        check(rr.terminal != "hard-block" and rr.ok and rr.emitted
+              and os.path.exists(_o),
+              f"P4-fix[{_pl}]: kv-calc PASS/TIGHT -> NOT a false "
+              f"hard-block; curated download-eligible + compose emitted "
+              f"(terminal={rr.terminal}, ok={rr.ok}, emitted={rr.emitted})")
+    if os.path.exists(_o):
+        os.unlink(_o)
 
 # Path-B structural isolation: NO Path-B run can ever set emitted/
 # compose_text. Sweep a representative matrix.

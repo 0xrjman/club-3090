@@ -533,8 +533,9 @@ def run_pull(
     entry = s2.registry_entry or {}
     spec = der.spec
     if spec is None:
-        # Tier-1 curated hit: build the generic-dense spec shape from the
-        # curated ModelProfile so [B] can price it (P1's predict contract).
+        # Tier-1 curated hit: build the curated-exact kv-calc spec (real
+        # model_family preserved) so [B] prices it through P1's authoritative
+        # family branch, not generic-dense's conservative lower-bound.
         spec = _curated_spec(profiles, der)
     rv = kv.raw_verdict(
         spec=spec,
@@ -685,34 +686,77 @@ def _short_refuse(msg: str) -> str:
     return "other"
 
 
+# Per-family map: which weight field(s) `kv._weights_per_card_gb` reads on
+# the DEFAULT (weights_variant="default") path that `[B]`/raw_verdict uses.
+# We substitute the actually-resolved curated-variant blob size onto exactly
+# these field(s) so pricing reflects the resolved variant WITHOUT ever
+# touching `model_family` (which selects the authoritative family pricing
+# branch in kv-calc). Keyed by the curated-exact spec's own model_family.
+_FAMILY_WEIGHT_FIELDS = {
+    "qwen3-next-hybrid": ("weights_total_gb",),
+    "qwen3-next-moe": ("weights_total_gb",),
+    "gemma4-swa-dense": ("weights_int4_gb",),
+    "gemma4-swa-moe": ("weights_int4_gb", "weights_awq_gb"),
+}
+
+
 def _curated_spec(profiles, der) -> dict:
-    """Build a generic-dense-shaped spec for a Tier-1 curated hit so P1's
-    raw_verdict can price it (the curated ModelProfile is authoritative;
-    we never recompute weight size — we read the curated variant size)."""
+    """Build the **curated-exact** kv-calc spec for a Tier-1 curated hit so
+    P1's raw_verdict prices it through the model's authoritative
+    family-specific branch (NOT generic-dense's conservative lower-bound).
+
+    Start from `kv.MODEL_SPECS[der.tier1.model_id]` — the SAME specs
+    `tools/kv-calc.py --calibration` validates at 22/22 — preserving its real
+    `model_family` and every family-specific field, then substitute ONLY the
+    weight size for the actually-resolved variant (`der.tier1.weights_variant`)
+    read from the curated ModelProfile (the ModelProfile remains the weight
+    authority; we never recompute weight size). NEVER emit
+    `model_family="generic-dense"` for a curated model."""
     t1 = der.tier1
+    kv = _kv()
+    model_specs = getattr(kv, "MODEL_SPECS", None)
+    if not isinstance(model_specs, dict) or t1.model_id not in model_specs:
+        raise RuntimeError(
+            f"_curated_spec: Tier-1 model_id {t1.model_id!r} not in "
+            f"kv.MODEL_SPECS (keys={sorted((model_specs or {}).keys())}). "
+            f"This is a hard error — refusing to fall back to generic-dense "
+            f"for a curated model."
+        )
+    # Defensive copy of the authoritative curated-exact spec (preserve
+    # model_family + all family fields verbatim — do NOT recompute/adjust).
+    spec = dict(model_specs[t1.model_id])
+    family = spec.get("model_family")
+    if family == "generic-dense" or not family:
+        raise RuntimeError(
+            f"_curated_spec: curated-exact spec for {t1.model_id!r} has "
+            f"unexpected model_family={family!r}; refusing to price a "
+            f"curated model as generic-dense."
+        )
+
+    # Resolved-variant weight blob size from the curated ModelProfile
+    # (authoritative; same source the old code read).
     model = profiles.models[t1.model_id]
     vmeta = model.weights.get(t1.weights_variant, {}) or {}
     size_gb = (
         vmeta.get("size_gb")
         or (der.profile or {}).get("weights_variant_size_gb")
-        or 0.0
     )
-    head_dim = model.head_dim_attn
-    if not head_dim and model.num_attn_heads:
-        head_dim = model.hidden_size // model.num_attn_heads
-    return {
-        "model_id": t1.slug,
-        "model_family": "generic-dense",
-        "arch": None,
-        "hidden_size": model.hidden_size,
-        "num_hidden_layers": model.num_hidden_layers,
-        "num_attn_heads": model.num_attn_heads,
-        "num_kv_heads": model.num_kv_heads,
-        "head_dim_attn": head_dim,
-        "weights_total_gb": float(size_gb),
-        "valid_tp": list(model.valid_tp),
-        "max_ctx_supported": model.max_ctx_supported,
-    }
+    weight_fields = _FAMILY_WEIGHT_FIELDS.get(family)
+    if weight_fields is None:
+        raise RuntimeError(
+            f"_curated_spec: no weight-field mapping for curated family "
+            f"{family!r} ({t1.model_id!r}). STOP — do not silently fall "
+            f"back to generic-dense."
+        )
+    # Only substitute when the curated ModelProfile gives a usable numeric
+    # blob size for the resolved variant. If it does not (e.g. "variable"
+    # GGUF), keep the authoritative spec's own validated weight size rather
+    # than zeroing it — never weaken the curated-exact pricing.
+    if isinstance(size_gb, (int, float)) and float(size_gb) > 0:
+        for f in weight_fields:
+            spec[f] = float(size_gb)
+    spec["model_id"] = t1.slug
+    return spec
 
 
 # ===========================================================================
