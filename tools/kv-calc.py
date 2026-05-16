@@ -189,6 +189,26 @@ GEMMA_ACTIVATION_PER_TOKEN_BYTES = 8  # tiny ctx scaling term to keep solver wel
 GEMMA_MOE_ACTIVATION_CONST_GB = 1.8
 GEMMA_MOE_ACTIVATION_PER_TOKEN_BYTES = 12
 
+# ---- generic-dense activation peak (conservative lower-bound on fit) ----
+# P1 / v0.8.0 Pull-Gate stratum-5/6: for an uncurated standard-dense
+# (MHA/GQA) model we have no measured anchor, so we deliberately OVER-price
+# the activation peak to guarantee generic-dense never predicts more fit
+# than a curated exact branch would for an equivalent shape.
+#
+# The form is a per-token coefficient × hidden_size × max_ctx (per card,
+# divided by TP). The coefficient is chosen to be at least as conservative
+# as the most conservative curated dense activation term in this file. The
+# most conservative curated dense per-token term is Qwen GDN (turboquant)
+# at 165 bytes/layer/token; expressed per hidden-unit that is
+# 165 * num_gdn_layers / hidden_size ≈ 165 * 64 / 2048 ≈ 5.16 bytes per
+# hidden-unit-token for the dense Qwen 27B shape. We round UP to 6.0 to stay
+# strictly on the conservative (lower-bound-on-fit) side for arbitrary
+# dense shapes, and add a fixed per-card floor at least as large as Gemma's
+# constant dense activation term (1.5 GB) so small-ctx configs are never
+# under-priced relative to the curated Gemma dense branch.
+GENERIC_DENSE_ACTIVATION_COEF_PER_HIDDEN = 6.0  # bytes per (hidden_size × token); ≥ most conservative curated dense
+GENERIC_DENSE_ACTIVATION_FLOOR_GB = 1.5         # ≥ Gemma dense constant activation term
+
 
 # =============================================================================
 # Compose presets (per-model)
@@ -304,6 +324,12 @@ def _weights_per_card_gb(spec, tp, weights_variant="default"):
         if weights_variant == "int4":
             return spec["weights_int4_gb"]
         return spec["weights_awq_gb"]
+    elif spec["model_family"] == "generic-dense":
+        # Weight authority is the caller-supplied summed selected-blob size
+        # (HF siblings, populated by P2). generic-dense NEVER recomputes
+        # weights from params — it trusts the provided blob-size GB. Dense
+        # weights are sharded evenly across TP ranks.
+        return spec["weights_total_gb"] / tp
     raise ValueError(f"Unknown model_family: {spec['model_family']}")
 
 
@@ -410,6 +436,23 @@ def kv_pool_per_card_bytes(spec, kv_format, max_ctx, max_num_seqs, tp, mtp_n=0):
         sliding_per_card = sliding_fixed_total / tp
         return growing, sliding_per_card
 
+    elif spec["model_family"] == "generic-dense":
+        # Standard MHA/GQA: every hidden layer grows KV. K and V stored
+        # independently (no K==V tying assumption for an arbitrary uncurated
+        # model — the conservative choice → ×2). Same shape as the curated
+        # Qwen dense branch (num_layers × num_kv_heads × head_dim × 2 × bpe),
+        # generalized to all layers since a pure-dense model has no GDN/SWA
+        # split. No sliding-window fixed term for generic-dense.
+        per_token = (
+            spec["num_hidden_layers"]
+            * spec["num_kv_heads"]
+            * spec["head_dim_attn"]
+            * 2  # K + V stored independently (conservative; no K==V tying)
+            * bpe
+        )
+        growing = (per_token / tp) * max_ctx * max_num_seqs
+        return growing, 0.0
+
     raise ValueError(f"Unknown model_family: {spec['model_family']}")
 
 
@@ -441,6 +484,21 @@ def activation_peak_per_card_bytes(spec, kv_format, max_ctx, tp):
         const_bytes = GEMMA_MOE_ACTIVATION_CONST_GB * 1e9
         per_token = GEMMA_MOE_ACTIVATION_PER_TOKEN_BYTES * max_ctx
         return (const_bytes + per_token) / tp
+
+    elif spec["model_family"] == "generic-dense":
+        # Conservative hidden_size-based coefficient × max_ctx, plus a fixed
+        # per-card floor ≥ the most conservative curated dense constant
+        # (Gemma 1.5 GB). The coefficient (6.0 B / hidden-unit / token) is
+        # ≥ the most conservative curated dense per-token term re-expressed
+        # per hidden-unit (Qwen GDN turboquant ≈ 5.16). This guarantees a
+        # lower-bound on fit vs. an equivalent curated dense shape.
+        per_token = (
+            GENERIC_DENSE_ACTIVATION_COEF_PER_HIDDEN
+            * spec["hidden_size"]
+            * max_ctx
+        )
+        floor_bytes = GENERIC_DENSE_ACTIVATION_FLOOR_GB * 1e9
+        return (floor_bytes + per_token) / tp
 
     raise ValueError(f"Unknown model_family: {spec['model_family']}")
 
@@ -578,6 +636,183 @@ def predict(
         verdict=verdict,
         notes=notes,
     )
+
+
+# =============================================================================
+# v0.8.0 Pull-Gate — generic-dense eligibility predicate + verdict adapter
+# =============================================================================
+#
+# Import path for P2/P3/P4: `tools/kv-calc.py` is not a dotted-importable
+# module name (hyphen). Load it via importlib, e.g.:
+#
+#     import importlib.util, pathlib, sys
+#     _p = pathlib.Path(REPO_ROOT) / "tools" / "kv-calc.py"
+#     spec = importlib.util.spec_from_file_location("kv_calc", _p)
+#     kv_calc = importlib.util.module_from_spec(spec)
+#     sys.modules["kv_calc"] = kv_calc   # required: @dataclass resolves
+#                                        # cls.__module__ via sys.modules
+#     spec.loader.exec_module(kv_calc)
+#     kv_calc.is_generic_dense_eligible(config)   # stratum-5 predicate
+#     kv_calc.raw_verdict(...)                     # [B]→[C1] adapter
+#
+# (This mirrors how the existing test harness loads the module.)
+
+# Markers that make a config NOT a standard dense (MHA/GQA) transformer.
+_SSM_RWKV_CONFIG_KEYS = (
+    "ssm_cfg",            # mamba / mamba2
+    "mamba_d_state",
+    "mamba_expand",
+    "mamba_n_heads",
+    "rwkv",               # rwkv-family marker
+    "time_mix_extra_dim",
+    "linear_attn_config", # qwen3-next / deltanet hybrid
+    "linear_num_value_heads",
+    "linear_num_key_heads",
+    "full_attention_interval",  # hybrid attention layout
+)
+_SSM_RWKV_MODEL_TYPE_SUBSTRINGS = (
+    "mamba", "rwkv", "ssm", "qwen3_next", "qwen3next",
+    "jamba", "zamba", "recurrentgemma", "griffin", "hgrn",
+)
+
+
+def is_generic_dense_eligible(config: dict) -> bool:
+    """Stratum-5 pre-`[B]` eligibility: True iff `config` is a standard
+    dense MHA/GQA transformer the generic-dense pricing branch can price.
+
+    Eligible iff ALL of:
+      - has hidden_size, num_hidden_layers, num_attention_heads,
+        num_key_value_heads
+      - head_dim present OR derivable as hidden_size / num_attention_heads
+        with no remainder
+    AND NONE of (ineligible — return False, never emit a number):
+      - SSM / Mamba / RWKV / linear-attention (DeltaNet hybrid) markers
+      - MoE (`num_local_experts` or `num_experts`)
+      - sliding-window-only attention (`sliding_window` set without any
+        full-attention layers)
+    """
+    if not isinstance(config, dict):
+        return False
+
+    required = ("hidden_size", "num_hidden_layers",
+                "num_attention_heads", "num_key_value_heads")
+    for key in required:
+        v = config.get(key)
+        if not isinstance(v, int) or isinstance(v, bool) or v <= 0:
+            return False
+
+    hidden_size = config["hidden_size"]
+    num_attn_heads = config["num_attention_heads"]
+
+    # head_dim explicit OR cleanly derivable.
+    head_dim = config.get("head_dim")
+    if not (isinstance(head_dim, int) and not isinstance(head_dim, bool) and head_dim > 0):
+        if num_attn_heads <= 0 or hidden_size % num_attn_heads != 0:
+            return False
+
+    # --- exclusions ---
+    model_type = str(config.get("model_type", "")).lower()
+    architectures = " ".join(
+        str(a) for a in config.get("architectures", []) if a is not None
+    ).lower()
+    for sub in _SSM_RWKV_MODEL_TYPE_SUBSTRINGS:
+        if sub in model_type or sub in architectures:
+            return False
+    for key in _SSM_RWKV_CONFIG_KEYS:
+        if config.get(key) is not None:
+            return False
+
+    # MoE.
+    if config.get("num_local_experts") is not None:
+        return False
+    if config.get("num_experts") is not None:
+        return False
+
+    # Sliding-window-only attention: a sliding_window is set and there is no
+    # evidence of any full-attention layers. (A model that mixes full +
+    # sliding — e.g. has a full-attention interval — is already excluded
+    # above via the hybrid-layout markers; here we reject pure-SWA.)
+    sliding_window = config.get("sliding_window")
+    if sliding_window is not None and sliding_window:
+        # Heuristics that indicate at least some full-attention layers.
+        has_full_attn = bool(
+            config.get("sliding_window_pattern")          # e.g. Gemma "every Nth is global"
+            or config.get("max_window_layers")            # Qwen2-style: first N layers full
+            or config.get("global_attn_layers")
+            or config.get("layer_types")                  # explicit per-layer attn type list
+        )
+        if not has_full_attn:
+            return False
+
+    return True
+
+
+# Map predict()'s coarse verdict → the design's [B]→[C1] vocabulary.
+_RAW_VERDICT_MAP = {
+    "FAIL": "wont-fit",
+    "TIGHT": "fits-constrained",
+    "PASS": "fits-clean",
+}
+
+
+def raw_verdict(
+    spec,
+    kv_format="fp8_e5m2",
+    max_ctx=180000,
+    max_num_seqs=1,
+    tp=1,
+    mem_util=0.95,
+    vram_gb=24,
+    dflash_draft_gb=0.0,
+    drafter_gb=0.0,
+    mtp=False,
+    weights_variant="default",
+) -> dict:
+    """Thin `[B]`→`[C1]` adapter over predict().
+
+    Returns a JSON-serializable dict exposing predict()'s result in the
+    design's vocabulary:
+      FAIL  → "wont-fit"
+      TIGHT → "fits-constrained"
+      PASS  → "fits-clean"
+
+    The structured dict (verdict + key GB breakdown + notes) is what the
+    P3/P4 `[C1]` §4.1 total function consumes alongside the confidence tier.
+    Confidence assignment is NOT done here (that is the deriver / stratum-5
+    layer in later STEPs); this adapter only translates the raw fit verdict.
+    """
+    p = predict(
+        spec=spec,
+        kv_format=kv_format,
+        max_ctx=max_ctx,
+        max_num_seqs=max_num_seqs,
+        tp=tp,
+        mem_util=mem_util,
+        vram_gb=vram_gb,
+        dflash_draft_gb=dflash_draft_gb,
+        drafter_gb=drafter_gb,
+        mtp=mtp,
+        weights_variant=weights_variant,
+    )
+    return {
+        "raw_verdict": _RAW_VERDICT_MAP[p.verdict],
+        "predict_verdict": p.verdict,
+        "model": p.model,
+        "breakdown_gb": {
+            "weights": round(p.weights_gb, 4),
+            "kv_pool_requested": round(p.kv_pool_requested_gb, 4),
+            "kv_pool_actual": round(p.kv_pool_actual_gb, 4),
+            "kv_pool_sliding_fixed": round(p.kv_pool_sliding_fixed_gb, 4),
+            "activation": round(p.activation_gb, 4),
+            "cudagraph_overhead": round(p.cudagraph_overhead_gb, 4),
+            "drafter": round(p.drafter_gb, 4),
+            "total": round(p.total_gb, 4),
+        },
+        "budget_gb": round(p.budget_gb, 4),
+        "vram_gb": p.vram_gb,
+        "pct_of_vram": round(p.pct_of_vram, 2),
+        "notes": list(p.notes),
+    }
 
 
 def fmt_prediction(p: Prediction, header: str = "") -> str:
