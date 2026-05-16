@@ -24,8 +24,8 @@ arches:
       marlin_alignment_required: true
       moe_layout: dense
       evidence: "scripts/lib/profiles/models/qwen3.6-27b.yml valid_tp; models/qwen3.6-27b/vllm/patches/vllm-marlin-pad/README.md"
-    requires_trust_remote_code: unverified
-    requires_trust_remote_code_evidence: none
+    requires_trust_remote_code: "false"
+    requires_trust_remote_code_evidence: "qwen3.6-27b weights config.json (qwen3.6-27b-autoround-int4) architectures=[Qwen3_5ForConditionalGeneration], auto_map absent, no *modeling*.py modeling file shipped with the weights -> built-in vLLM/transformers class, no remote code executed; see scripts/lib/profiles/profile_runtime.yml arch_model_xref.Qwen3NextForCausalLM"
     kernel_constraints:
       - "AutoRound INT4 TP paths may need Marlin pad-sub-tile-n until vllm#40361 lands."
       - "TurboQuant KV is Genesis-gated on shipped production composes."
@@ -47,8 +47,8 @@ arches:
       marlin_alignment_required: false
       moe_layout: moe
       evidence: "scripts/lib/profiles/models/qwen3.6-35b-a3b.yml valid_tp; docs/KV_MATH.md#qwen-36-35b-a3b-moe"
-    requires_trust_remote_code: unverified
-    requires_trust_remote_code_evidence: none
+    requires_trust_remote_code: "false"
+    requires_trust_remote_code_evidence: "qwen3.6-35b-a3b weights config.json (qwen3.6-35b-a3b-autoround-int4) architectures=[Qwen3_5MoeForConditionalGeneration], auto_map absent, no *modeling*.py shipped -> built-in class; see scripts/lib/profiles/profile_runtime.yml arch_model_xref.Qwen3_5MoeForConditionalGeneration"
     kernel_constraints:
       - "Preview path is Genesis-free and no-TQ3 until a Genesis pin re-anchors on a post-vllm#42521 nightly."
       - "Built-in MTP measured slower on TP=2 preview; use no-MTP preview as current default."
@@ -76,8 +76,8 @@ arches:
       marlin_alignment_required: false
       moe_layout: dense
       evidence: "scripts/lib/profiles/models/gemma-4-31b.yml valid_tp; docs/KV_MATH.md#gemma-4-31b"
-    requires_trust_remote_code: unverified
-    requires_trust_remote_code_evidence: none
+    requires_trust_remote_code: "false"
+    requires_trust_remote_code_evidence: "gemma-4-31b weights config.json (gemma-4-31b-autoround-int4) architectures=[Gemma4ForConditionalGeneration], auto_map absent, no *modeling*.py shipped -> built-in class; see scripts/lib/profiles/profile_runtime.yml arch_model_xref.Gemma4ForConditionalGeneration"
     kernel_constraints:
       - "Hybrid SWA has heterogeneous head dimensions; Gemma 4 TQ3 on Ampere is blocked on current pins."
       - "Use int8_per_token_head for long-context Ampere paths; fp8_e4m3 is not supported on sm_86."
@@ -119,8 +119,8 @@ arches:
       marlin_alignment_required: true
       moe_layout: moe
       evidence: "scripts/lib/profiles/models/gemma-4-26b-a4b.yml valid_tp; BENCHMARKS.md#moe-models AutoRound Ampere-blocked row"
-    requires_trust_remote_code: unverified
-    requires_trust_remote_code_evidence: none
+    requires_trust_remote_code: "false"
+    requires_trust_remote_code_evidence: "gemma-4-26b-a4b weights config.json (both gemma-4-26b-a4b-autoround-int4-mixed and gemma-4-26b-a4b-awq-4bit) architectures=[Gemma4ForConditionalGeneration], auto_map absent, no *modeling*.py shipped -> built-in class; see scripts/lib/profiles/profile_runtime.yml arch_model_xref.Gemma4ForConditionalGenerationMoE"
     kernel_constraints:
       - "AutoRound INT4 MoE intermediate 704 is Ampere-blocked by Marlin K-dim alignment; AWQ compressed-tensors is the 24GB Ampere path."
       - "Global attention KV head count caps shipped TP at 2."
