@@ -13,7 +13,8 @@ If you have one or two RTX 3090s and want to run modern LLMs at home, in a homel
   - 🛡 **llama.cpp single** = max robustness. Full **262K context** on one 3090. Stress-tested clean: no prefill cliffs, 25K-token tool returns work, 90K needle ladder passes. Slower (~21 TPS) but doesn't crash on real-world tool-using agents.
 - **Validated docker compose configs** for both routes — drop-in OpenAI-compatible API on `localhost:8020`
 - **Multi-engine**: vLLM (full features), llama.cpp (max ctx + robustness), SGLang (currently blocked, watch list)
-- **Model-agnostic**: today ships configs for Qwen3.6-27B; structure scales as we add models
+- **Model-agnostic**: today ships curated configs for Qwen3.6-27B and friends; structure scales as we add models
+- **Universal `pull` (v0.8.0)** — *evaluate any safetensors HF repo; pull only vLLM-loadable supported ones, and only when the gates pass (or an explicit override is accepted)*. The model-agnostic front door for anything not in the curated list — the curated catalog above still ships and still works. → [`docs/PULL.md`](docs/PULL.md)
 
 **First time here?** → [Models](#supported-models) — pick yours.
 **Already running, want to compare engines?** → [docs/engines/](docs/engines/)
@@ -32,6 +33,7 @@ If you have one or two RTX 3090s and want to run modern LLMs at home, in a homel
 | **1× RTX 3090** | [`docs/SINGLE_CARD.md`](docs/SINGLE_CARD.md) — workload → config → quick start |
 | **2× RTX 3090** (PCIe / no NVLink) | [`docs/DUAL_CARD.md`](docs/DUAL_CARD.md) — workload → config → quick start |
 | **3+ GPUs** (any class — 4× 3090, 8× A6000, mixed) | [`docs/MULTI_CARD.md`](docs/MULTI_CARD.md) — TP scaling math, derivation from `dual.yml`, valid TP values |
+| **A model not in the supported list** / any HF safetensors repo | [`docs/PULL.md`](docs/PULL.md) — universal `pull` flow: evaluate against the KV math, honest about confidence |
 | Considering self-host vs cloud APIs | [`docs/COMPARISONS.md`](docs/COMPARISONS.md) — cost crossover + when each wins |
 
 Each hardware page lists every supported model with the working composes for that card count, plus measured TPS and per-workload pitfalls. Model-specific deep dives (quants, Genesis patches, engine internals) live under [`models/<name>/`](models/).

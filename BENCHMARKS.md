@@ -231,6 +231,8 @@ Tested via `URL=http://localhost:8004 MODEL=luce-dflash bash scripts/verify-stre
 
 ---
 
+<a id="gemma-4-31b-community-experimental"></a>
+
 ## Gemma 4 31B (community-experimental)
 
 Cross-rig data on Google's official Gemma 4 MTP "assistant" drafter (released 2026-05-05). PR [#41745](https://github.com/vllm-project/vllm/pull/41745) merged 2026-05-06 → today's nightly contains it natively (overlay dropped 2026-05-08). The companion compose [`dual/int8.yml`](models/gemma-4-31b/vllm/compose/dual/int8.yml) (added 2026-05-08) vendors PR [#40391](https://github.com/vllm-project/vllm/pull/40391) (rebased) + PR #42006 + PR #41991 to unlock per-token-head INT8 KV → 8.2× context lift on Ampere (32K → 262K). See announcement [discussion #67](https://github.com/noonghunna/club-3090/discussions/67) for the original Gemma 4 setup story; Phase 2 INT8 PTH validation in progress 2026-05-08.
@@ -258,6 +260,8 @@ None close the **-13% narr / -11% code gap to 3dluvr's anchor**. Remaining gap l
 
 
 ---
+
+<a id="moe-models"></a>
 
 ## MoE models (v0.7.3 — preview track)
 
