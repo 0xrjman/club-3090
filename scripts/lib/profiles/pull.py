@@ -1426,8 +1426,46 @@ _EXIT_NEEDS_FLAG = 3     # confirm→proceed / advisory not yet satisfied
 _EXIT_USAGE = 64
 
 
+def _maybe_submit_verb(argv: list[str]) -> Optional[int]:
+    """v0.8.2 CONTRACT-1.3 — the `--submit-last` / `--submit <dir>` verb is
+    a DISTINCT top-level verb, parsed BEFORE the positional-slug /
+    `--profile-like` requirement (so `--submit*` needs NEITHER a slug NOR
+    `--profile-like`). Returns an exit code when the submit verb was
+    invoked, else `None` (fall through to the normal gate CLI).
+
+    This is intentionally a pre-argparse intercept: the shipped gate parser
+    hard-requires `slug` + `--profile-like`, and the submit verb is a
+    different invocation grammar entirely (the on-ramp, not a gate run).
+    The submit path is the ONLY place network ever happens, and only after
+    an explicit `y` (the locked `[F]`-offline boundary — `run_pull` itself
+    stays I/O-free).
+    """
+    if "--submit-last" not in argv and "--submit" not in argv:
+        return None
+
+    from scripts.lib.profiles.submit_pull import submit_pull
+
+    submit_last = "--submit-last" in argv
+    capture_dir: Optional[str] = None
+    if "--submit" in argv:
+        i = argv.index("--submit")
+        if i + 1 < len(argv):
+            capture_dir = argv[i + 1]
+    return submit_pull(
+        capture_dir=capture_dir,
+        submit_last=submit_last,
+        repo_root=REPO_ROOT,
+    )
+
+
 def main(argv: list[str]) -> int:
     import argparse
+
+    # v0.8.2 CONTRACT-1.3 — the submit verb is parsed BEFORE the gate
+    # parser's slug/--profile-like requirement (a distinct top-level verb).
+    _sub_rc = _maybe_submit_verb(argv)
+    if _sub_rc is not None:
+        return _sub_rc
 
     class _UsageExit64Parser(argparse.ArgumentParser):
         """argparse's default `error()` hard-exits 2 — which collides with
@@ -1528,6 +1566,33 @@ def main(argv: list[str]) -> int:
         print(f"[pull] note: {n}")
     if res.emitted and not args.out:
         sys.stdout.write(res.compose_text or "")
+
+    # v0.8.2 CONTRACT-1.2 — surface the failure on-ramp pointer (gate path,
+    # I/O-FREE: a single print; NO network, NO blocking prompt, NO auto-send
+    # — submission is the separate, explicit, consented `--submit-last`
+    # step). The TRIGGER is "a gate bundle was emitted for this run", keyed
+    # on the capture dir the V1 pass-through recorded on `res.diagnostics`
+    # — EXPLICITLY NOT gated on the exit code. The single most important
+    # §10-R9 lever (`engine-support-unknown/no-arch-row`) is the
+    # `--experimental-arch`-bypassable advisory path that exits 0 yet emits
+    # a bundle; gating this pointer on `exit==2` would silently suppress the
+    # submit prompt for exactly that class. It does NOT classify (that is
+    # loop-side at submit) — it prints unconditionally on any emitted gate
+    # bundle; suppression (no public issue) is enforced loop-side. The
+    # surfaced message points ONLY at the redacted `.pull-captures/`
+    # artifact + the exact one-command — never "paste your terminal output"
+    # (console is not a safe submission source).
+    _gc = res.diagnostics.get("gate_capture") if res.diagnostics else None
+    _gc_dir = _gc.get("dir") if isinstance(_gc, dict) else None
+    if _gc_dir:
+        print(
+            f"[pull] Diagnostics captured (redacted, no paths/tokens): "
+            f"{_gc_dir}"
+        )
+        print(
+            "[pull] Help improve the fit math — submit with: "
+            "scripts/pull.sh --submit-last"
+        )
 
     if res.ok:
         return _EXIT_OK
