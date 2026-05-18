@@ -340,7 +340,7 @@ def select_weight_files(
     if not safet:
         return None, DeriverError(
             DeriverErrorKind.UNSUPPORTED_FORMAT,
-            "no top-level *.safetensors (GGUF/.bin not supported until v0.8.1)",
+            "no top-level *.safetensors (GGUF/.bin not supported — this path is vLLM + safetensors only)",
         )
 
     index_files = [
@@ -740,7 +740,7 @@ def derive(
             res.error = DeriverError(
                 DeriverErrorKind.UNSUPPORTED_FORMAT,
                 f"{slug} resolves to {t1.model_id}.{t1.weights_variant} "
-                f"(format={fmt!r}); GGUF not supported until v0.8.1",
+                f"(format={fmt!r}); GGUF not supported — vLLM + safetensors only",
             )
             return res
         res.tier1 = t1
