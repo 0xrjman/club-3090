@@ -5,7 +5,7 @@ type: llama.cpp
 stability: stable
 install:
   method: docker_image
-  spec: llama-cpp:local
+  spec: ghcr.io/ggml-org/llama.cpp:server-cuda-b9246
 min_sm: 6.0
 supported_model_families:
   - qwen3-next-hybrid
@@ -22,5 +22,5 @@ supported_weight_formats:
 required_overlays: []
 vendored_overlays: []
 required_genesis: false
-notes: "Cliff-immune single-card fallback for Qwen GGUF serving. Built from ggerganov/llama.cpp @ d14ce3dab (MTP PR #22673)."
+notes: "Cliff-immune single-card fallback for Qwen GGUF serving. Upstream `ghcr.io/ggml-org/llama.cpp:server-cuda` pinned at build b9246 (commit 871b0b70f, 2026-05-20) — MTP PR #22673 merged + draft-eagle3 + draft-mtp spec types available natively. Override via env: `LLAMACPP_IMAGE=ghcr.io/.../server-cuda-bXXXX`."
 
