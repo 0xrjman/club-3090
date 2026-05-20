@@ -68,7 +68,7 @@
 
 services:
   llama-cpp-qwen36-27b-mtp-vision:
-    image: ${LLAMACPP_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda-b9246}
+    image: ${LLAMACPP_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
     container_name: "${ESTATE_CONTAINER:-llama-cpp-qwen36-27b}"
     restart: unless-stopped
     ports:

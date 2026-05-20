@@ -22,7 +22,7 @@ For full pros/cons + general llama.cpp tuning, see [`/docs/engines/LLAMA_CPP.md`
 
 ## Docker compose (recommended)
 
-Three compose variants in [`compose/single/`](compose/single/) — all use the official `ghcr.io/ggml-org/llama.cpp:server-cuda` image (pinned at build `b9246`, contains MTP PR #22673), **no custom build needed**. Override the pinned tag via `LLAMACPP_IMAGE` env if you want a newer build (do verify MTP behavior hasn't drifted before relying on changed numbers).
+Three compose variants in [`compose/single/`](compose/single/) — all use the official rolling `ghcr.io/ggml-org/llama.cpp:server-cuda` image, **no custom build needed**, **no club-3090 patches** (unlike our vLLM track). MTP PR #22673 has merged upstream so the rolling tag has it natively. Pin to a specific build via `LLAMACPP_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda-bXXXX` env if you want to lock against upstream drift; otherwise `docker compose pull` picks up upstream's latest. Bench numbers were measured on build `b9246` (2026-05-20); expect ±5% drift on newer builds.
 
 ### `docker-compose.yml` — max context, single slot, vision
 
