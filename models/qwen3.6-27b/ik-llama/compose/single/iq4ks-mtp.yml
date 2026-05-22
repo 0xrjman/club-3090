@@ -20,11 +20,15 @@
 #              KV pre-allocated so this is steady-state; ~2.1 GB headroom — fine on a
 #              dedicated card, tight if anything else shares GPU 0). -ub 512 @ 262144
 #              → 21.5 GB if you need the extra ~1 GB back.
-#   Status:    🧪 EVAL ONLY — task #402. NOT shipped. Reproduces ampersandru's
-#              discussion #152 single-3090 result; our rig: ~61 narr / ~70 code
-#              wall TPS (+18-20% over shipped llamacpp/mtp Q4_K_M's 51/60).
-#   Best for:  TBD — gated on the controlled bench (TPS + 8-pack quality +
-#              soak + aider-30) vs shipped llamacpp/mtp Q4_K_M.
+#   Status:    ✅ Shipped (advanced-quant track, #180). In the wizard +
+#              `bash scripts/switch.sh ik-llama/iq4ks-mtp`.
+#   Perf:      Ties shipped llamacpp/mtp Q4_K_M on TPS (~50 narr / ~58 code at a
+#              verified, matched 370 W on the same card) AND 8-pack quality
+#              (103 vs 102) — the earlier "+18-20%" was a power/card artifact
+#              (see discussions/184). ik's real edge is a ~0.5-0.8 GB leaner
+#              VRAM footprint.
+#   Best for:  VRAM-tight single-card (sub-24 GB, shared GPU, WSL display tax)
+#              where the leaner footprint matters; or if you want IQK quants.
 # ---------------------------------------------------------------------------
 # Qwen3.6-27B on ik_llama.cpp — single 3090, IQ4_KS + q4_0 KV + MTP, 131K default (262K max).
 #

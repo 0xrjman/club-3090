@@ -42,7 +42,7 @@ Five recommended options on Genesis v7.69 + vllm#35975 backport (2026-05-02 PM):
 | **Bulletproof, no cliffs** (production service, unpredictable inputs) | [`llamacpp/default`](../models/qwen3.6-27b/llama-cpp/compose/single/mtp.yml) (alias of `llamacpp/mtp`) | **262K** (via `-ub 512`) | 52 / 61 | ~23 GB |
 | **llama.cpp + MTP, fast + long ctx** ⭐ (IDE agents, opencode, Hermes, long-multi-turn agentic) | [`llamacpp/mtp`](../models/qwen3.6-27b/llama-cpp/compose/single/mtp.yml) | **131K** | **51 / 60** | ~22.5 GB |
 | **llama.cpp + MTP + vision** (multimodal chat, screenshot-debugging, vision-aware review) | [`llamacpp/mtp-vision`](../models/qwen3.6-27b/llama-cpp/compose/single/mtp-vision.yml) | **49K** | **57 / 66** | ~20.5 GB |
-| **ik_llama + IQ4_KS + MTP** ⭐ (best quality-per-bit GGUF, advanced-quant track) | [`iq4ks-mtp`](../models/qwen3.6-27b/ik-llama/compose/single/iq4ks-mtp.yml) | **262K** | **~62 / ~69** | ~22.5 GB |
+| **ik_llama + IQ4_KS + MTP** (best quality-per-bit GGUF + leanest VRAM; advanced-quant track) | [`iq4ks-mtp`](../models/qwen3.6-27b/ik-llama/compose/single/iq4ks-mtp.yml) | **262K** | ~50 / ~58 | **~22 GB** (leanest) |
 | **ik_llama + IQ4_KS + MTP + vision** | [`iq4ks-mtp-vision`](../models/qwen3.6-27b/ik-llama/compose/single/iq4ks-mtp-vision.yml) | **160K** | TBD | ~21 GB |
 | **ik_llama + two-stage spec-dec** 🧪 (ngram+MTP, code-optimized, experimental) | [`iq4ks-two-stage`](../models/qwen3.6-27b/ik-llama/compose/single/iq4ks-two-stage.yml) | **131K** | TBD | ~22 GB |
 | **Small-context vLLM safe path** ([@stiggy2k16](https://github.com/noonghunna/club-3090/issues/43) data point) — IDE agents capped at <60K accumulated, when you need vLLM speed but llama.cpp is too slow | [`minimal.yml`](../models/qwen3.6-27b/vllm/compose/single/minimal.yml) at `--gpu-memory-utilization 0.95 --max-model-len 65536` | **64K** | ~32 / ~33 (no MTP) | ~22.4 GB |
@@ -142,7 +142,7 @@ For the cross-card TP=2 picture, see [`DUAL_CARD.md`](DUAL_CARD.md).
 
 **Workload:** best quality-per-bit GGUF on a single 3090. Same cliff-immunity as llama.cpp (same ggml memory model), but with fork-exclusive IQK imatrix quants that beat mainline Q4_K_M on perplexity.
 
-ubergarm `Qwen3.6-27B-MTP-IQ4_KS.gguf` (IQK imatrix quant, built-in MTP head) + q4_0 KV + `-khad`/`-vhad` (Hadamard K+V cache transforms) + MTP `n=2` + `--merge-qkv` + `--parallel-tool-calls` (ik-exclusive). **262K context** on one 3090. **~62 narr / ~69 code TPS** — ~+18-20% over shipped `llamacpp/mtp` Q4_K_M at equal-or-better quality. Engine: `ghcr.io/ikawrakow/ik-llama-cpp:cu13-server`. See [`docs/engines/IK_LLAMA.md`](engines/IK_LLAMA.md) for the full deep dive.
+ubergarm `Qwen3.6-27B-MTP-IQ4_KS.gguf` (IQK imatrix quant, built-in MTP head) + q4_0 KV + `-khad`/`-vhad` (Hadamard K+V cache transforms) + MTP `n=2` + `--merge-qkv` + `--parallel-tool-calls` (ik-exclusive). **262K context** on one 3090. At matched power it **ties `llamacpp/mtp`** on TPS (~50 narr / ~58 code) and quality (8-pack 103 vs 102) — the earlier "+18–20%" was a power/card artifact ([#184](https://github.com/noonghunna/club-3090/discussions/184)). Its real edge is a **~0.5–0.8 GB leaner footprint**, which makes it the pick when VRAM is tight (sub-24 GB, shared GPU, WSL). Engine: `ghcr.io/ikawrakow/ik-llama-cpp:cu13-server`. See [`docs/engines/IK_LLAMA.md`](engines/IK_LLAMA.md) for the full deep dive.
 
 ### ik_llama + IQ4_KS + MTP + vision — `iq4ks-mtp-vision.yml`
 
