@@ -29,11 +29,12 @@
 #              → 21.5 GB if you need the extra ~1 GB back.
 #   Status:    ✅ Shipped (advanced-quant track, #180). In the wizard +
 #              `bash scripts/switch.sh ik-llama/iq4ks-mtp`.
-#   Perf:      Ties shipped llamacpp/mtp Q4_K_M on TPS (~50 narr / ~58 code at a
-#              verified, matched 370 W on the same card) AND 8-pack quality
-#              (103 vs 102) — the earlier "+18-20%" was a power/card artifact
-#              (see discussions/184). ik's real edge is a ~0.5-0.8 GB leaner
-#              VRAM footprint.
+#   Perf:      ~18-20% FASTER decode TPS than shipped llamacpp/mtp Q4_K_M
+#              (~60 narr / ~69 code vs ~50/58, at set-and-readback matched 370 W
+#              same card), quality-tied (8-pack 103 vs 102), AND ~0.5-0.8 GB
+#              leaner VRAM — faster AND leaner. Confirmed by a power-cap A/B +
+#              5 ik runs (all ~70 code). The 2026-05-22 "tie" was a wrong-engine
+#              measurement artifact (its tie number = mainline@370). See discussions/184.
 #   Best for:  VRAM-tight single-card (sub-24 GB, shared GPU, WSL display tax)
 #              where the leaner footprint matters; or if you want IQK quants.
 # ---------------------------------------------------------------------------

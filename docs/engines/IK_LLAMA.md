@@ -2,7 +2,7 @@
 
 **Role on this stack:** the engine you reach for when you want **newer, higher-quality-per-bit quants** than mainline llama.cpp ships — specifically the **IQK imatrix family** (`IQ4_KS`, `IQ5_KS`, …) that exists *only* in this fork. It's a llama.cpp fork (ikawrakow), so it inherits llama.cpp's cliff-immune memory model and broad hardware support, then adds a co-designed quant + kernel stack on top.
 
-> **In one line:** llama.cpp's robustness + fork-exclusive IQK quants + fused CUDA kernels → **MTP, clean to 262K on one card, quality on par with `llamacpp/mtp`** (8-pack 103 vs 102), at a **~0.5–0.8 GB leaner VRAM footprint**. On TPS it's a **tie** with `llamacpp/mtp` at matched power (~50 narr / ~58 code on a 3090); the leaner footprint — not speed — is the reason to pick it (it shines when VRAM-tight: sub-24 GB, shared GPU, WSL). Full matched-power write-up: [discussions/184](https://github.com/noonghunna/club-3090/discussions/184).
+> **In one line:** llama.cpp's robustness + fork-exclusive IQK quants + fused CUDA kernels → **MTP, clean to 262K on one card, quality on par with `llamacpp/mtp`** (8-pack 103 vs 102), at a **~0.5–0.8 GB leaner VRAM footprint**. It's also **~18–20% faster** than `llamacpp/mtp` on decode TPS at matched 370 W (~60 narr / ~69 code vs ~50 / ~58 on a 3090) — so it's the faster *and* leaner single-card path. The trade is a second engine to maintain + the IQK quant. Full matched-power write-up: [discussions/184](https://github.com/noonghunna/club-3090/discussions/184).
 
 For *what the quants actually are* and how IQK compares to k-quants / i-quants / AWQ, see **[../QUANTIZATION.md](../QUANTIZATION.md)**. For the cross-engine overview see **[../INFERENCE_ENGINES.md](../INFERENCE_ENGINES.md)**.
 
@@ -153,14 +153,14 @@ ik_llama has several quality-relevant flags beyond what the default composes use
 
 | Metric | Value | vs shipped `llamacpp/mtp` (Q4_K_M) |
 |---|---|---|
-| Decode TPS (narr / code) | ~50 / ~58 | **tie** at matched 370 W (the earlier "+18–20%" was a power/card artifact — see [#184](https://github.com/noonghunna/club-3090/discussions/184)) |
+| Decode TPS (narr / code) | **~60 / ~72** | **~18–20% faster** than `llamacpp/mtp` (~50 / ~59) at matched 370 W — confirmed by a power-cap-controlled A/B (ik leads at 230 W *and* 370 W); the earlier "tie" was a wrong-engine measurement artifact, see [#184](https://github.com/noonghunna/club-3090/discussions/184) |
 | Max context (1× 3090) | **262K** (q4_0 KV) | tie (mainline also reaches 262K via `-ub 512`) |
-| VRAM @ 262K | ~22.5 GB | **~0.5–0.8 GB leaner** ← ik's one real edge |
+| VRAM @ 262K | ~22.5 GB | **~0.5–0.8 GB leaner** (a second edge, alongside the TPS lead) |
 | verify-stress | 7/7 (incl. 91K Cliff 2 needle) | parity |
 | Quality 8-pack | **103/150** | ≈ tie (mainline 102) |
 | toolcall-15 | 60% (native template) | tie — native won the A/B on **both** engines |
 
-> Bench: canonical prompt, 3 warmup + measured runs, **verified 370 W same-card matched comparison**, q4_0 KV / MTP n=2 / thinking-off. The honest finding is a TPS/quality/context tie — ik's edge is the leaner footprint, useful when VRAM-tight. See [#184](https://github.com/noonghunna/club-3090/discussions/184) + [../../BENCHMARKS.md](../../BENCHMARKS.md).
+> Bench: canonical prompt, 3 warmup + measured runs, **set-and-readback 370 W same-card matched comparison**, q4_0 KV / MTP n=2 / thinking-off. The honest finding: **ik is ~18–20% faster on decode TPS** (quality + context tied, ~0.5–0.8 GB leaner) — faster *and* leaner. The 2026-05-22 "tie" was a wrong-engine measurement artifact (its "tie" number is exactly mainline@370, which ik produces at no power setting); corrected 2026-05-23 via a power-cap-controlled A/B + 5 independent ik runs all at ~70 code. See [#184](https://github.com/noonghunna/club-3090/discussions/184) + [../../BENCHMARKS.md](../../BENCHMARKS.md).
 > 
 > **Two-stage (ngram+MTP):** not yet benched. Compose exists (`iq4ks-two-stage.yml`), PR #1789 merged 2026-05-15. Expected to outperform MTP-only on code workloads with repeated patterns; bench pending.
 
