@@ -1,40 +1,40 @@
 # ===========================================================================
 # Profile (at-a-glance):
-#   Model:     Qwen3.6-27B (Unsloth Q3_K_XL GGUF)
+#   Model:     Qwen3.6-27B (Q4_K_M GGUF)
 #   Engine:    llama.cpp (NOT vLLM)
 #   Topology:  Single 3090 (TP=1)
 #   Drafter:   none
 #   KV:        q4_0 (4-bit packed)
 #   Vision:    yes (mmproj F16)
-#   Max ctx:   192K pool / 4 parallel slots
+#   Max ctx:   192K pool / 2 parallel slots
 #   Genesis:   N/A — llama.cpp engine; Genesis is vLLM/Qwen3-Next-specific
 #   Status:    ✅ Production
 #   Engine-profile: llama-cpp-mainline
-#   Best for:  Single-card multi-tenant llama.cpp — 4 concurrent agents
+#   Best for:  Single-card multi-tenant llama.cpp — 2 concurrent agents
 #              at smaller per-stream ctx; trade max-ctx for parallelism
 # ---------------------------------------------------------------------------
-# Qwen3.6-27B on llama.cpp — single 3090, max concurrency (4 slots), vision on.
+# Qwen3.6-27B on llama.cpp — single 3090, moderate concurrency (2 slots), vision on.
 #
 # Trade max context for parallelism. Multi-tenant or batched-agent path:
-# four concurrent requests share a 192K KV pool (~48K each if split evenly,
+# two concurrent requests share a 192K KV pool (~96K each if split evenly,
 # but llama-server allocates dynamically per slot).
 #
 # Config differences from default (docker-compose.yml):
-#   - --parallel 4 (was 1)
-#   - --ctx-size  192000 (was 262144) — 4 slots fit in less total KV
+#   - --parallel 2 (was 1)
+#   - --ctx-size  192000 (was 262144) — 2 slots fit in less total KV
 #   - --cont-batching on (improves throughput when prompts arrive concurrently)
 #   - everything else identical
 #
 # VRAM budget on 24 GB:
-#   weights (Q3_K_XL):       ~14.5 GB
-#   KV at 192K (q4_0 K+V):    ~3.3 GB (shared pool across 4 slots)
-#   mmproj F16:               ~0.8 GB
-#   total:                   ~18.6 GB
-#   headroom:                 ~5 GB
+#   weights (Q4_K_M):             ~17.0 GB
+#   KV at 192K (q4_0 K+V):        ~3.3 GB (shared pool across 2 slots)
+#   mmproj F16:                   ~0.8 GB
+#   total:                        ~21.1 GB
+#   headroom:                     ~2.9 GB
 #
 # When to pick this over docker-compose.yml:
 #   ✅ Multi-tenant chat (e.g. small team, Open WebUI multi-user)
-#   ✅ Agent farm — 4 agents working on tasks in parallel
+#   ✅ Agent farm — 2 agents working on tasks in parallel
 #   ✅ A/B testing two prompts simultaneously
 #   ❌ You need >65K per single conversation (default is better)
 #   ❌ You need max single-stream TPS (more slots = some latency floor)
@@ -43,7 +43,7 @@
 #   docker compose -f single/concurrent.yml up -d
 #
 # Env overrides identical to default — see docker-compose.yml header.
-# -m /models/${GGUF_FILE:-qwen3.6-27b-gguf/unsloth-q3kxl/Qwen3.6-27B-UD-Q3_K_XL.gguf}
+# -m /models/${GGUF_FILE:-qwen3.6-27b-gguf/Qwen3.6-27B-Q4_K_M.gguf}
 # --mmproj /models/${MMPROJ_FILE:-qwen3.6-27b-gguf/mmproj-F16.gguf}
 # --chat-template-kwargs ${CHAT_TEMPLATE_KWARGS:-{"enable_thinking":false}}
 services:

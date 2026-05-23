@@ -256,6 +256,13 @@ COMPOSE_REGISTRY = {
         compose_path="models/qwen3.6-27b/llama-cpp/compose/single/concurrent.yml",
         default_port=8020,
     ),
+    "llamacpp/mtp-concurrent": _entry(
+        model="qwen3.6-27b", weights_variant="gguf", workload="multi-stream-tenant",
+        engine="llama-cpp-local", drafter="qwen-mtp-builtin", kv_format="q4_0",
+        tp=1, max_ctx=131072, max_num_seqs=2, mem_util=None,
+        compose_path="models/qwen3.6-27b/llama-cpp/compose/single/mtp-concurrent.yml",
+        default_port=8020,
+    ),
 
     # ik_llama.cpp — IQ4_KS (ubergarm). Same engine family as llamacpp, but the
     # IQK quant is ~0.5-0.8 GB leaner on weights → best fit for VRAM-tight

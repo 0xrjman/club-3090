@@ -6,8 +6,7 @@
 #   Drafter:   MTP n=2 (--spec-type draft-mtp, sweet spot — see BENCHMARKS.md)
 #   KV:        q4_0 K + q4_0 V (densest mainline, Ampere-fast)
 #   Vision:    no (mmproj NOT mounted — for vision, see mtp-vision.yml)
-#   Template:  native (GGUF-embedded) — froggeric A/B'd here, regressed 8-pack 102→95
-#   Max ctx:   262144 default (@ -ub 512); 131072 also fine (@ -ub 1024, faster prefill)
+#   Max ctx:   131072 (safe-headroom max on 24 GB; sweep-verified)
 #   Genesis:   N/A — llama.cpp engine; Genesis is vLLM/Qwen3-Next-specific
 #   Status:    ✅ Production
 #   Engine-profile: llama-cpp-local
@@ -15,25 +14,25 @@
 #              speed + ctx workhorse. ~51 narr / ~60 code TPS, 7/7 verify-stress
 #              (incl. 60K + 91K needle), 102/150 quality (68%) on the 8-pack.
 # ---------------------------------------------------------------------------
-# Qwen3.6-27B on llama.cpp — single 3090, MTP, 262K ctx, no vision.
+# Qwen3.6-27B on llama.cpp — single 3090, MTP, 131K ctx, no vision.
 #
-# This is one of TWO named single-card profiles for this model (collapsed from
-# three on 2026-05-22 — the old vanilla Q3_K_XL `docker-compose.yml` was retired
-# once Q4_K_M was shown to reach the full 262K too; see the CTX_SIZE note below):
-#   - mtp.yml         → MTP n=2 + no vision (THIS file). `llamacpp/default`
-#                       is now an ALIAS for this profile.
-#   - mtp-vision.yml  → MTP n=2 + vision (multimodal)
+# This is one of three named single-card profiles for this model:
+#   - docker-compose.yml  → vanilla 262K + vision, cliff-immune fallback
+#   - mtp.yml             → MTP n=2 + 131K + no vision (THIS file — fast + ctx)
+#   - mtp-vision.yml      → MTP n=2 + 49K + vision (multimodal + fast)
 #
 # Why no vision here: mmproj F16 costs ~0.8 GB. Without it the MTP-safe ctx
 # ceiling jumps from ~49K to 131K (sweep-verified 2026-05-19 on build 9235).
 # If you don't need image input, this is the better MTP profile.
 #
-# Template: native (GGUF-embedded) + `--reasoning off` + `--reasoning-format
-# deepseek` — the stack-wide thinking-off lever. We A/B'd froggeric v19 here
-# (it loads + honours --reasoning off fine on b9246 — the old "froggeric
-# suppresses --reasoning off" lore is stale), but it REGRESSED the 8-pack
-# 102 → 95 on mainline llama.cpp. froggeric helps the vLLM/Qwen3-Next path,
-# not this engine — so native is the default. Closes opencode hang (#97).
+# Stack-wide thinking-off-by-default policy (matches the 22/24 vLLM composes
+# shipping chat_template_kwargs.enable_thinking=false). On llama.cpp the
+# right lever is `--reasoning off` against the *native* template (the one
+# embedded in the GGUF). The vLLM-only froggeric template is NOT mounted —
+# it has no llama.cpp thinking-mode Jinja hook and silently suppresses
+# `--reasoning off`. Native template + `--reasoning off` is the correct
+# llama.cpp interface; closes opencode hang (#97) cleanly without needing
+# the older `--reasoning-format none` workaround.
 #
 # Cliff-survival: -ub 1024 (lowered from the older 2048 default). The 25K
 # tool-prefill check in verify-stress fails at -ub 2048 on tight single-card
@@ -61,13 +60,10 @@
 # Override defaults via .env or shell:
 #   MODEL_DIR              host dir to mount as /models  (default: ../../../../../models-cache)
 #   GGUF_FILE              path under /models  (default: qwen3.6-27b-gguf/unsloth-mtp-q4km/Qwen3.6-27B-Q4_K_M.gguf)
-#   CTX_SIZE               KV pool size        (default: 262144 = full native @ -ub 512;
-#                          boots ~23 GB, MTP active, verify-stress 7/7 + soak PASS, 2026-05-22.
-#                          For faster prefill / more headroom: CTX_SIZE=131072 UBATCH_SIZE=1024.)
-#   BATCH_SIZE             llama.cpp -b        (default: 4096 — on mainline -b does NOT drive VRAM)
-#   UBATCH_SIZE            llama.cpp -ub       (default: 512 — funds the 262K default; raise to 1024 at 131K)
+#   CTX_SIZE               KV pool size        (default: 131072 — safe-headroom max)
+#   BATCH_SIZE             llama.cpp -b        (default: 4096)
+#   UBATCH_SIZE            llama.cpp -ub       (default: 1024 — cliff-survival)
 #   KV_TYPE                K and V quant type  (default: q4_0)
-#   NP                     parallel slots      (default: 1 — see ⚠ below)
 #   MTP_DRAFT_N_MAX        MTP draft tokens    (default: 2 — sweet spot per BENCHMARKS.md)
 #   REASONING              thinking gate       (default: off — stack-wide policy)
 #   REASONING_FORMAT       reasoning routing   (default: deepseek — hygiene)
@@ -76,48 +72,32 @@
 
 services:
   llama-cpp-qwen36-27b-mtp:
-    # Pinned to b9246 (validated 2026-05-20). The rolling `:server-cuda` tag
-    # regressed at b9282 (broken lib packaging: `libllama-common.so.0: cannot
-    # open shared object file` → crash loop) — see #187. Bump via env when a
-    # newer build is validated:  LLAMACPP_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda-bXXXX
-    image: ${LLAMACPP_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda-b9246}
+    image: ${LLAMACPP_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
     container_name: "${ESTATE_CONTAINER:-llama-cpp-qwen36-27b}"
     restart: unless-stopped
     ports:
       - "${ESTATE_PORT:-${PORT:-8020}}:8080"
     volumes:
       - "${MODEL_DIR:-../../../../../models-cache}:/models:ro"
-    # ⚠ -np 1 is intentional on a single 24 GB card — do NOT raise it to
-    #   "parallelize." One GPU is compute-bound: extra slots divide its
-    #   throughput, they don't multiply it. At -np 4 each slot fell to
-    #   ~14 tok/s here — slow enough to trip agentic clients' per-request
-    #   timeouts (aider ran 1/30) — and -np>1 also auto-disables MTP and
-    #   can OOM the spec-context buffer. On a higher-throughput card (e.g.
-    #   5090) or multi-GPU the trade may flip — re-validate before raising.
     command: >-
       --host 0.0.0.0
       --port 8080
       -m /models/${GGUF_FILE:-qwen3.6-27b-gguf/unsloth-mtp-q4km/Qwen3.6-27B-Q4_K_M.gguf}
-      --alias qwen3.6-27b
-      -c ${CTX_SIZE:-262144}
+      -c ${CTX_SIZE:-131072}
       -b ${BATCH_SIZE:-4096}
-      -ub ${UBATCH_SIZE:-512}
+      -ub ${UBATCH_SIZE:-2048}
       -ngl 99
       -fa on
       --cache-type-k ${KV_TYPE:-q4_0}
       --cache-type-v ${KV_TYPE:-q4_0}
-      -np ${NP:-1}
+      -np 2
+      --kv-unified
       --spec-type draft-mtp
-      --spec-draft-n-max ${MTP_DRAFT_N_MAX:-4}
+      --spec-draft-n-max ${MTP_DRAFT_N_MAX:-2}
       --spec-draft-p-min 0.75
       --jinja
       --reasoning ${REASONING:-on}
       --reasoning-format ${REASONING_FORMAT:-deepseek}
-      --temp ${TEMP:-${TEMPERATURE:-0.6}}
-      --top-p ${TOP_P:-0.95}
-      --top-k ${TOP_K:-20}
-      --min-p ${MIN_P:-0.0}
-      --repeat-penalty ${REPEAT_PENALTY:-1.0}
     deploy:
       resources:
         reservations:
