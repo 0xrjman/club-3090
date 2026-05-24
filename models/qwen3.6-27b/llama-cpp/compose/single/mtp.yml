@@ -93,12 +93,13 @@ services:
     #   timeouts (aider ran 1/30) — and -np>1 also auto-disables MTP and
     #   can OOM the spec-context buffer. On a higher-throughput card (e.g.
     #   5090) or multi-GPU the trade may flip — re-validate before raising.
+    # Override CTX_SIZE to 131072 @ -ub 1024 for faster prefill
     command: >-
       --host 0.0.0.0
       --port 8080
       -m /models/${GGUF_FILE:-qwen3.6-27b-gguf/unsloth-mtp-q4km/Qwen3.6-27B-Q4_K_M.gguf}
       --alias qwen3.6-27b
-      -c ${CTX_SIZE:-200000}  # Override to 131072 @ -ub 1024 for faster prefill
+      -c ${CTX_SIZE:-200000}
       -b ${BATCH_SIZE:-4096}
       -ub ${UBATCH_SIZE:-512}
       -ngl 99
