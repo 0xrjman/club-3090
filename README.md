@@ -1,12 +1,14 @@
 # club-3090
 
-**Recipes for serving LLMs locally on RTX 3090s.** Multi-engine (vLLM, llama.cpp, ik_llama, SGLang), multi-model, model-agnostic by design.
+**Recipes for serving LLMs locally on RTX 3090s.** Multi-engine (vLLM, llama.cpp, ik_llama), multi-model, model-agnostic by design.
 
 If you have one or two RTX 3090s and want to run modern LLMs at home, in a homelab, or as a dev backend — this repo collects the working configs, patches, and benchmarks.
 
 ---
 
 ## Quick start
+
+> 🪟 **On Windows?** These steps assume Linux/macOS. Set up **WSL2** first → **[docs/WSL_SETUP.md](docs/WSL_SETUP.md)** (start-to-finish). Native Windows runs only the *upstream* llama.cpp binary — none of this repo's tooling.
 
 ```bash
 # 1. Clone the repo
@@ -19,7 +21,7 @@ cd club-3090
 # 2. Pick/download + SHA-verify the model (interactive hardware-aware picker)
 #    (asks you which model, then where to put model weights — pick in-repo
 #     default, ~/models, or a custom path on a different drive. To skip prompts:
-#     `export MODEL_DIR=/mnt/your-drive/models` and pass the model name. See FAQ.)
+#     `export MODEL_DIR=/path/to/models` and pass the model name. See FAQ.)
 bash scripts/setup.sh
 #    Or scripted:
 #      bash scripts/setup.sh qwen3.6-27b
@@ -27,11 +29,10 @@ bash scripts/setup.sh
 # 3. Pick a config + boot it (interactive wizard: asks model → GPUs → projects VRAM budget)
 bash scripts/launch.sh
 #    Or skip the wizard:
-#      bash scripts/launch.sh --variant vllm/default      # single-card chat (recommended)
-#      bash scripts/launch.sh --variant vllm/dual         # dual-card 262K + vision
-#      bash scripts/launch.sh --variant llamacpp/default     # single-card MTP, fast + cliff-immune (alias of llamacpp/mtp; 262K via -ub 512)
-#      bash scripts/launch.sh --variant llamacpp/mtp         # single-card 131K + MTP (fast, ~60 code TPS)
-#      bash scripts/launch.sh --variant llamacpp/mtp-vision  # single-card 49K + MTP + vision
+#      bash scripts/launch.sh --variant llamacpp/default    # single-card chat (recommended) — cliff-immune, 200K @ -ub 512, ~51/60 TPS
+#      bash scripts/launch.sh --variant ik-llama/iq4ks-mtp  # single-card FASTEST — ~60/69 TPS, leanest VRAM (ik_llama IQK quant)
+#      bash scripts/launch.sh --variant llamacpp/mtp-vision # single-card 49K + MTP + vision
+#      bash scripts/launch.sh --variant vllm/dual           # dual-card 262K + vision (vLLM single-card paths blocked on #167)
 #    Or partial flags (wizard fills the rest):
 #      bash scripts/launch.sh --model qwen3.6-27b --gpus 0,1
 #      bash scripts/launch.sh --tp 2 --pp 1               # override vLLM parallelism
@@ -64,16 +65,16 @@ bash scripts/update.sh
 
 - **Two complementary routes** — pick by what your workload breaks on:
   - 🏎 **vLLM dual** = max throughput. Up to **127 TPS code** (DFlash) or **4 concurrent streams @ 262K** (turbo). Full feature stack (vision · tools · MTP · streaming).
-  - 🛡 **llama.cpp single** = max robustness. Full **262K context** on one 3090. Stress-tested clean: no prefill cliffs, 25K-token tool returns work, 90K needle ladder passes. Slower (~21 TPS) but doesn't crash on real-world tool-using agents.
+  - 🛡 **llama.cpp single** = max robustness. Full **200K context** on one 3090 (max-safe — fills cleanly with margin; see [CLIFFS](docs/CLIFFS.md)). Stress-tested clean: no prefill cliffs, 25K-token tool returns work, 91K needle ladder passes. **~51 / 60 TPS** (Q4_K_M + MTP) — slower than vLLM dual but doesn't crash on real-world tool-using agents.
 - **Validated docker compose configs** for both routes — drop-in OpenAI-compatible API on `localhost:8020`
-- **Multi-engine**: vLLM (full features), llama.cpp (max ctx + robustness), ik_llama (best GGUF quants), SGLang (currently blocked, watch list)
+- **Multi-engine**: vLLM (full features), llama.cpp (max ctx + robustness), ik_llama (best GGUF quants). _(SGLang was evaluated — currently blocked on Ampere; see [`docs/engines/SGLANG.md`](docs/engines/SGLANG.md).)_
 - **Model-agnostic**: today ships curated configs for Qwen3.6-27B and friends; structure scales as we add models
 - **Universal `pull`** (v0.8.0; extended in v0.8.2) — evaluate any safetensors HF repo, get an honest one-line fit verdict (`--recommend`), and when a pull hard-blocks, send the redacted diagnostic back in one consented step (`--submit-last`). Broader arch coverage each release. See [`docs/PULL.md`](docs/PULL.md)
 
 **New to local AI itself?** → [`docs/LOCAL_AI_PRIMER.md`](docs/LOCAL_AI_PRIMER.md) — plain-English: how hardware / engines / model sizes / quants fit together.
 **New here?** → [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) — 5-minute clone-to-curl path.
 **Already running, want to compare engines?** → [docs/engines/](docs/engines/)
-**Picking an engine** (vLLM / llama.cpp / SGLang / ik_llama)? → [docs/INFERENCE_ENGINES.md](docs/INFERENCE_ENGINES.md)
+**Picking an engine** (vLLM / llama.cpp / ik_llama)? → [docs/INFERENCE_ENGINES.md](docs/INFERENCE_ENGINES.md)
 **Confused by quant names** (Q4_K_M vs IQ4_KS vs AWQ)? → [docs/QUANTIZATION.md](docs/QUANTIZATION.md)
 **Hardware questions** (4090, NVLink, power caps)? → [docs/HARDWARE.md](docs/HARDWARE.md)
 **Don't know what TPS / KV / MTP mean?** → [docs/GLOSSARY.md](docs/GLOSSARY.md)
@@ -98,10 +99,10 @@ Each hardware page lists every supported model with the working composes for tha
 
 | Model | Status | Card counts | Engines | Highlights |
 |---|---|---|---|---|
-| **[Qwen3.6-27B](models/qwen3.6-27b/)** | Production-ready ⭐ | 1× / 2× 3090 | vLLM ✅ · llama.cpp ✅ · ik_llama ✅ · SGLang ❌ blocked | Vision · tools · MTP n=3 · up to 262K ctx · vLLM dual = 89/127 TPS · llama.cpp single = full 262K, no prefill cliffs · ik_llama IQ4_KS = ~62/69 TPS |
-| **[Gemma 4 31B](models/gemma-4-31b/)** | Production-ready (dual-card only on Ampere 24 GB) | 2× 3090 only ¹ | vLLM ✅ · llama.cpp ❌ · SGLang ❌ | Vision · tools · MTP n=3 (Google official drafter) **OR** DFlash n=7 (z-lab drafter) · up to 262K ctx via INT8 PTH KV (PR [#40391](https://github.com/vllm-project/vllm/pull/40391) vendored) · MTP dual = 106/141 TPS at 32K, 95/126 at 262K · DFlash dual = 105/177 TPS at 32K (code-optimal) |
-| **[Qwen3.6 35B-A3B](models/qwen3.6-35b-a3b/)** ⭐ NEW v0.7.3 | Preview (production-track blocked on Genesis v7.73.x) | 2× 3090 | vLLM ✅ (preview) · SGLang ❌ · llama.cpp ❌ | **MoE (256 experts × 8 active, ~3 B active params)** · vision · tools · upstream native loader via [vLLM PR #42521](https://github.com/vllm-project/vllm/pull/42521) · preview dual = **182/177 TPS at 16K** (no MTP, no TQ3, no Genesis) |
-| **[Gemma 4 26B-A4B](models/gemma-4-26b-a4b/)** ⭐ NEW v0.7.3 | Production via AWQ (Intel AutoRound INT4 blocked on Ampere) | 2× 3090 | vLLM ✅ (AWQ overlay) · SGLang ❌ · llama.cpp ❌ | **MoE (128 experts × 8 active, ~4 B active params)** · vision · tools · AWQ dual = **139/139 TPS at 32K**, CV 0.2% / 0.0% |
+| **[Qwen3.6-27B](models/qwen3.6-27b/)** | Production-ready ⭐ | 1× / 2× 3090 | vLLM ✅ · llama.cpp ✅ · ik_llama ✅ | Vision · tools · MTP n=3 · up to 262K ctx · vLLM dual = 89/127 TPS · llama.cpp single = 200K max-safe, no prefill cliffs · ik_llama IQ4_KS = ~60/69 TPS (fastest single-card) |
+| **[Gemma 4 31B](models/gemma-4-31b/)** | Production-ready (dual-card only on Ampere 24 GB) | 2× 3090 only ¹ | vLLM ✅ · llama.cpp ❌ | Vision · tools · MTP n=3 (Google official drafter) **OR** DFlash n=7 (z-lab drafter) · up to 262K ctx via INT8 PTH KV (PR [#40391](https://github.com/vllm-project/vllm/pull/40391) vendored) · MTP dual = 106/141 TPS at 32K, 95/126 at 262K · DFlash dual = 105/177 TPS at 32K (code-optimal) |
+| **[Qwen3.6 35B-A3B](models/qwen3.6-35b-a3b/)** ⭐ NEW v0.7.3 | Preview (production-track blocked on Genesis v7.73.x) | 2× 3090 | vLLM ✅ (preview) · llama.cpp ❌ | **MoE (256 experts × 8 active, ~3 B active params)** · vision · tools · upstream native loader via [vLLM PR #42521](https://github.com/vllm-project/vllm/pull/42521) · preview dual = **182/177 TPS at 16K** (no MTP, no TQ3, no Genesis) |
+| **[Gemma 4 26B-A4B](models/gemma-4-26b-a4b/)** ⭐ NEW v0.7.3 | Production via AWQ (Intel AutoRound INT4 blocked on Ampere) | 2× 3090 | vLLM ✅ (AWQ overlay) · llama.cpp ❌ | **MoE (128 experts × 8 active, ~4 B active params)** · vision · tools · AWQ dual = **139/139 TPS at 32K**, CV 0.2% / 0.0% |
 
 ¹ Single-card boot OOMs on Ampere 24 GB regardless of KV format. Single-card Gemma 4 is feasible on 32 GB+ GPUs (validated on RTX 5090 32 GB by [@apnar](https://github.com/noonghunna/club-3090/discussions/67#discussioncomment-16832042)).
 
@@ -117,6 +118,69 @@ Bench protocol: 3 warm + 5 measured runs. See [`scripts/bench.sh`](scripts/bench
 
 ---
 
+## Benchmarks
+
+Reproduce the numbers above on your own rig. All benchmarks run against the **currently-running** compose (boot one first via `launch.sh`).
+
+**Throughput (TPS)** — the canonical narrative + code bench (3 warmup + 5 measured per prompt):
+
+```bash
+bash scripts/bench.sh
+```
+
+**Behavioral quality** — tool-call correctness, instruction-following, structured output, etc. via `benchlocal-cli`:
+
+```bash
+bash scripts/quality-test.sh                          # --medium: 5 packs (default, ~15-25 min, no Docker)
+bash scripts/quality-test.sh --quick                  # 2 packs (~5-10 min, no Docker)
+bash scripts/quality-test.sh --full                   # 8 packs / 150 scenarios (~25-40 min, needs Docker)
+bash scripts/quality-test.sh --pack aider-polyglot-30 # a single named pack
+bash scripts/quality-test.sh --reasoning              # HE+/LCB/GPQA(gated)/GSM reasoning suite — separate from --full; code packs need Docker
+```
+
+**Full rebench (one model, everything)** — the canonical 5-step pipeline (`bench` → `verify-stress` → `quality-test --full` → `soak` → `aider-polyglot-30`), ~1.75-2 hr per leg. All artifacts land under `results/rebench/<tag>/`:
+
+```bash
+bash scripts/rebench-full.sh                      # auto-tag from MODEL
+bash scripts/rebench-full.sh --tag qwen-int8      # explicit tag
+bash scripts/rebench-full.sh --skip soak,aider    # skip phases (CSV)
+bash scripts/rebench-full.sh --resume             # resume an interrupted run (skip completed steps)
+
+# Endpoint-first mode (non-Docker engines: llama-swap, ramalama, raw llama-server, …):
+bash scripts/rebench-full.sh \
+  --url http://HOST:PORT --model 'MODEL-NAME' --engine llama-cpp   # vllm|llama-cpp|sglang|other
+```
+
+Run `rebench-full.sh` twice on different models to assemble a matched-config head-to-head. Full test-pipeline reference: [`docs/QUALITY_TEST.md`](docs/QUALITY_TEST.md).
+
+---
+
+## Diagnostics
+
+When filing a bug, sharing cross-rig data, or replying to a triage thread, generate a paste-ready triage report — it captures hardware, OS, GPU, container runtime, stack version, and active container state as markdown. **Home paths, hostnames, usernames, and HF tokens are redacted by default**, so it's safe to paste into a public issue or discussion.
+
+```bash
+# Quick report (~2 sec) — hardware + stack + boot-log highlights
+bash scripts/report.sh
+
+# Capture to a file ready to paste into a GitHub issue/discussion
+bash scripts/report.sh > my-rig.md
+
+# Add live test output (pick what the thread needs):
+bash scripts/report.sh --verify    # + verify-full.sh         (~1-2 min)
+bash scripts/report.sh --stress    # + verify-stress.sh 7/7   (~5-10 min)
+bash scripts/report.sh --soak      # + continuous soak        (~25 min) — catches Cliff 2b
+bash scripts/report.sh --bench     # + bench.sh TPS           (~3 min)
+bash scripts/report.sh --full      # ALL four — the canonical "everything" cross-rig pass (~35 min)
+
+# Internal sharing only (disable redaction):
+bash scripts/report.sh --no-redact
+```
+
+`--soak` is its own flag because a config can pass verify + stress + bench and still fail the multi-turn continuous soak (Cliff 2b at ~25K accumulated tokens) — soak is currently the only test that catches that agentic-workload failure mode. See [`docs/CLIFFS.md`](docs/CLIFFS.md).
+
+---
+
 ## Repo layout
 
 ```
@@ -128,6 +192,7 @@ club-3090/
 │   ├── LOCAL_AI_PRIMER.md                 plain-English on-ramp: hardware / engines / sizes / quants
 │   ├── ARCHITECTURE.md                    how this stack thinks about LLM serving on 24 GB
 │   ├── HARDWARE.md                        Ampere SM 8.6+, NVLink note, 24 GB ceilings
+│   ├── WSL_SETUP.md                        Windows (WSL2) from-scratch setup walkthrough
 │   ├── GLOSSARY.md                        plain-language definitions (TPS / KV / MTP / TP / etc.)
 │   ├── UPSTREAM.md                        every upstream issue / PR we depend on or have filed
 │   ├── CLIFFS.md                          full synopsis of the prefill cliffs (root causes + fix landscape)
@@ -180,17 +245,18 @@ club-3090/
 | For any model on this stack | Notes |
 |---|---|
 | 1× or 2× NVIDIA RTX 3090 (24 GB each) | Larger Ampere/Ada cards (4090, A6000) work; smaller cards (12 GB) don't fit 27B-class models. |
-| Linux (Ubuntu 22.04+ tested) | macOS/Windows: vLLM is Linux + CUDA only. Llama.cpp works on macOS/Windows but recipes assume Linux paths. |
+| Linux (Ubuntu 22.04+ tested) | macOS/Windows: vLLM is Linux + CUDA only. Llama.cpp works on macOS/Windows but recipes assume Linux paths. **On Windows? See [docs/WSL_SETUP.md](docs/WSL_SETUP.md)** for the from-scratch WSL2 walkthrough. |
 | Docker + NVIDIA Container Toolkit | For vLLM. llama.cpp works without Docker. |
 | NVIDIA driver 580.x+ | For CUDA 13 runtime in vLLM nightly. |
 | ~30 GB free disk | Per model. More for multiple models. |
 
 vLLM image pins live in `scripts/lib/profiles/engines/*.yml` and are exported
-by `scripts/launch.sh` / `scripts/switch.sh` as `VLLM_NIGHTLY_SHA`. To opt into
-the pre-built club image after CI has promoted it, override the full image ref:
+by `scripts/launch.sh` / `scripts/switch.sh` as `VLLM_NIGHTLY_SHA`. Set
+`VLLM_IMAGE` to override the full image ref — e.g. to pin a specific upstream
+nightly, or to run a current image when a pinned nightly has been purged:
 
 ```bash
-VLLM_IMAGE=ghcr.io/noonghunna/vllm-club3090:latest bash scripts/launch.sh --variant vllm/dual
+VLLM_IMAGE=vllm/vllm-openai:latest bash scripts/launch.sh --variant vllm/dual
 ```
 
 See [docs/HARDWARE.md](docs/HARDWARE.md) for hardware-specific notes (PCIe vs NVLink, power draw, etc.).

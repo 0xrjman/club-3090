@@ -226,20 +226,28 @@ COMPOSE_REGISTRY = {
 
     # Qwen 3.6 27B, llama.cpp single-card.
     # `llamacpp/default` is an alias for `llamacpp/mtp` (collapsed 2026-05-22):
-    # mainline Q4_K_M reaches the full 262K with -ub 512, so the old Q3_K_XL
-    # vanilla compose was retired and `default` now points at the MTP compose.
+    # the old Q3_K_XL vanilla compose was retired and `default` now points at
+    # the MTP compose. max_ctx = the 200K max-safe default (262K boots but walls
+    # ~125K at fill — see docs/CLIFFS.md; runtime CTX_SIZE default is 200000).
     "llamacpp/default": _entry(
         model="qwen3.6-27b", weights_variant="gguf", workload="fast-chat",
         engine="llama-cpp-local", drafter="qwen-mtp-builtin", kv_format="q4_0",
-        tp=1, max_ctx=131072, max_num_seqs=1, mem_util=None,
+        tp=1, max_ctx=200000, max_num_seqs=1, mem_util=None,
         compose_path="models/qwen3.6-27b/llama-cpp/compose/single/mtp.yml",
         default_port=8020,
     ),
     "llamacpp/mtp": _entry(
         model="qwen3.6-27b", weights_variant="gguf", workload="fast-chat",
         engine="llama-cpp-local", drafter="qwen-mtp-builtin", kv_format="q4_0",
-        tp=1, max_ctx=131072, max_num_seqs=1, mem_util=None,
+        tp=1, max_ctx=200000, max_num_seqs=1, mem_util=None,
         compose_path="models/qwen3.6-27b/llama-cpp/compose/single/mtp.yml",
+        default_port=8020,
+    ),
+    "llamacpp/bounded-thinking": _entry(
+        model="qwen3.6-27b", weights_variant="gguf", workload="tool-heavy",
+        engine="llama-cpp-local", drafter="qwen-mtp-builtin", kv_format="q4_0",
+        tp=1, max_ctx=200000, max_num_seqs=1, mem_util=None,
+        compose_path="models/qwen3.6-27b/llama-cpp/compose/single/bounded-thinking.yml",
         default_port=8020,
     ),
     "llamacpp/mtp-vision": _entry(
@@ -271,7 +279,7 @@ COMPOSE_REGISTRY = {
     "ik-llama/iq4ks-mtp": _entry(
         model="qwen3.6-27b", weights_variant="gguf", workload="fast-chat",
         engine="llama-cpp-local", drafter="qwen-mtp-builtin", kv_format="q4_0",
-        tp=1, max_ctx=262144, max_num_seqs=1, mem_util=None,
+        tp=1, max_ctx=200000, max_num_seqs=1, mem_util=None,
         compose_path="models/qwen3.6-27b/ik-llama/compose/single/iq4ks-mtp.yml",
         default_port=8020,
     ),
@@ -280,6 +288,13 @@ COMPOSE_REGISTRY = {
         engine="llama-cpp-local", drafter="qwen-mtp-builtin", kv_format="q4_0",
         tp=1, max_ctx=163840, max_num_seqs=1, mem_util=None,
         compose_path="models/qwen3.6-27b/ik-llama/compose/single/iq4ks-mtp-vision.yml",
+        default_port=8020,
+    ),
+    "ik-llama/iq4ks-two-stage": _entry(
+        model="qwen3.6-27b", weights_variant="gguf", workload="fast-chat",
+        engine="llama-cpp-local", drafter="qwen-mtp-builtin", kv_format="q4_0",
+        tp=1, max_ctx=200000, max_num_seqs=1, mem_util=None,
+        compose_path="models/qwen3.6-27b/ik-llama/compose/single/iq4ks-two-stage.yml",
         default_port=8020,
     ),
 
