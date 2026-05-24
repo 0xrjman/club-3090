@@ -38,12 +38,18 @@ MODES
              ~15-25 min, no Docker required
   --full     8 packs:  + bugfind-15, hermesagent-20, cli-40
              ~25-40 min, requires Docker (auto-starts sandbox containers)
+  --reasoning
+             Reasoning suite: humaneval-plus-30, lcb-v6-30, gpqa-diamond
+             metadata gate, gsm-symbolic-30. Separate from --full; code
+             packs require Docker.
 
   --pack PACK_ID   Run a single pack (overrides mode flag).
                    Available IDs:
                      toolcall-15  instructfollow-15  structoutput-15
                      dataextract-15  reasonmath-15
                      bugfind-15  cli-40  hermesagent-20  (require Docker)
+                     humaneval-plus-30  lcb-v6-30  gsm-symbolic-30
+                     gpqa-diamond  (gated metadata-only until access approved)
 
 OPTIONS
   -h, --help       Show this help and exit
@@ -102,6 +108,7 @@ EXAMPLES
   bash scripts/quality-test.sh                          # --medium against running compose
   bash scripts/quality-test.sh --quick                  # quicker, 2 packs only
   bash scripts/quality-test.sh --full                   # everything, needs Docker
+  bash scripts/quality-test.sh --reasoning              # HE+/LCB/GSM reasoning fast subsets
   bash scripts/quality-test.sh --pack toolcall-15       # just the tool-call pack
   bash scripts/quality-test.sh --pack aider-polyglot-30 --timeout-per-case 3600
   URL=http://localhost:8030 bash scripts/quality-test.sh # against a different port
@@ -154,7 +161,7 @@ THINKING_MAX_TOKENS="${THINKING_MAX_TOKENS:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --quick|--medium|--full)
+    --quick|--medium|--full|--reasoning)
       MODE="$1"
       shift
       ;;
