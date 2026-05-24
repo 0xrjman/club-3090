@@ -70,7 +70,7 @@ UBATCH_SIZE=512 CTX_SIZE=196608 bash scripts/switch.sh llamacpp/mtp-vision
 
 So ~10% TPS hit (56.5 → 50.9 narr) buys ~4× more context (49K → 192K). For pure-chat / short-prompt workloads, keep the default. For agentic vision, override.
 
-**For `llamacpp/mtp` (no vision)** — the same `-ub` 512 trade applies but with smaller margins (no mmproj competing for VRAM). Probe with `UBATCH_SIZE=512 CTX_SIZE=196608 bash scripts/switch.sh llamacpp/mtp` if you need more than the shipped 131K — we haven't shipped this as a default but the lever is there.
+**For `llamacpp/mtp` (no vision)** — now ships at 200K ctx (default CTX_SIZE, synced to upstream v0.8.4). If you need more (up to ~256K), probe with `UBATCH_SIZE=512 CTX_SIZE=262144 bash scripts/switch.sh llamacpp/mtp` — the ctx ceiling is KV-VRAM bound, not architectural.
 
 **For `llamacpp/default`** — already at the model's training-max 262K ctx; `-ub` is not a useful lever (no ctx upside, only TPS cost). Keep the default `1024`.
 

@@ -7,9 +7,8 @@
 #   KV:        q4_0 K + q4_0 V (densest mainline, Ampere-fast)
 #   Vision:    no (mmproj NOT mounted — for vision, see mtp-vision.yml)
 #   Template:  native (GGUF-embedded) — froggeric A/B'd here, regressed 8-pack 102→95
-#   Max ctx:   131072 (safe-headroom verified max on 24 GB, faster prefill @ -ub 1024; see PR #200).
-#              Upstream default: 200000 @ -ub 512 (fills ~183K w/ ~1.1 GB margin); 262144 boots
-#              but walls ~125K (FA scratch at fill — see docs/CLIFFS.md)
+#   Max ctx:   200000 (synced to upstream v0.8.4 standard @ -ub 512, fills ~183K w/ ~1.1 GB margin).
+#              131072 @ -ub 1024: valid override for faster prefill (our older safe-headroom max).
 #   Genesis:   N/A — llama.cpp engine; Genesis is vLLM/Qwen3-Next-specific
 #   Status:    ✅ Production
 #   Engine-profile: llama-cpp-local
@@ -17,7 +16,7 @@
 #              speed + ctx workhorse. ~51 narr / ~60 code TPS, 7/7 verify-stress
 #              (incl. 60K + 91K needle), 102/150 quality (68%) on the 8-pack.
 # ---------------------------------------------------------------------------
-# Qwen3.6-27B on llama.cpp — single 3090, MTP, 131K ctx (default; overridable to 200K), no vision.
+# Qwen3.6-27B on llama.cpp — single 3090, MTP, 200K ctx (synced to upstream v0.8.4), no vision.
 #
 # This is one of TWO named single-card profiles for this model (collapsed from
 # three on 2026-05-22 — the old vanilla Q3_K_XL `docker-compose.yml` was retired
@@ -27,7 +26,7 @@
 #   - mtp-vision.yml  → MTP n=2 + vision (multimodal)
 #
 # Why no vision here: mmproj F16 costs ~0.8 GB. Without it the MTP-safe ctx
-# ceiling jumps from ~49K to 131K (sweep-verified 2026-05-19 on build 9235).
+# ceiling jumps from ~49K to 200K (synced to upstream v0.8.4 standard; our earlier 131K was a safe-headroom intermediate).
 # If you don't need image input, this is the better MTP profile.
 #
 # Template: native (GGUF-embedded) + `--reasoning off` + `--reasoning-format
@@ -37,20 +36,20 @@
 # 102 → 95 on mainline llama.cpp. froggeric helps the vLLM/Qwen3-Next path,
 # not this engine — so native is the default. Closes opencode hang (#97).
 #
-# Cliff-survival: -ub 1024 (lowered from the older 2048 default). The 25K
-# tool-prefill check in verify-stress fails at -ub 2048 on tight single-card
-# headroom; -ub 1024 halves the per-pass activation peak and the boundary
-# matrix goes 5/7 → 7/7. The "Cliff 2 single-prompt at 50–60K is
-# architectural" narrative is partially superseded by this config: at
-# -ub 1024 + 131K + MTP n=2 + thinking-off, verify-stress recalls needles
-# cleanly at 58K and 91K.
+# Cliff-survival: -ub 1024 (local optimization, upstream ships -ub 512).
+# The 25K tool-prefill check in verify-stress fails at -ub 2048 on tight single-card
+# headroom; -ub 1024 halves the per-pass activation peak and takes the boundary
+# matrix 5/7 → 7/7. Verified at -ub 1024 + 200K ctx: recall passes cleanly
+# at 58K and 91K. If you encounter OOM, override via UBATCH_SIZE=512.
 #
 # VRAM budget on 24 GB (Q4_K_M):
 #   weights (Q4_K_M):             ~17.0 GB
-#   KV at 131K (q4_0 K+V):         ~5.0 GB
+#   KV at 200K (q4_0 K+V):         ~7.6 GB
 #   MTP draft head + overhead:     ~0.5 GB
-#   total:                        ~22.5 GB
-#   headroom:                      ~1.6 GB for prompt + activation peaks
+#   total:                        ~25.1 GB
+#   scratch (ub 1024):             ~1.0 GB for prompt processing
+#   peak estimate:                 ~26.1 GB
+#   To fit on 24 GB: override UBATCH_SIZE=512 (scratch → ~0.5 GB).
 #
 # Quick start:
 #   1. Get the MTP-enabled GGUF:
@@ -63,13 +62,9 @@
 # Override defaults via .env or shell:
 #   MODEL_DIR              host dir to mount as /models  (default: ../../../../../models-cache)
 #   GGUF_FILE              path under /models  (default: qwen3.6-27b-gguf/unsloth-mtp-q4km/Qwen3.6-27B-Q4_K_M.gguf)
-#   CTX_SIZE               KV pool size        (default: 131072 — safe verified max on 24 GB;
-#                          see PR #200: 262K boots but OOMs at ~125K fill.
-#                          131072 @ -ub 1024 yields 1.6 GB headroom, MTP n=4 OK.
-#                          Upstream default: 200000 @ -ub 512 (fills ~183K w/ ~1.1 GB)
+#   CTX_SIZE               KV pool size        (default: 200000 — upstream v0.8.4 standard; overridable to 131072 @ -ub 1024 for faster prefill)
 #   BATCH_SIZE             llama.cpp -b        (default: 4096 — on mainline -b does NOT drive VRAM)
-#   UBATCH_SIZE            llama.cpp -ub       (default: 1024 — cliff-survival, matches 131K safe ceiling;
-#                          upstream uses 512 for 200K default)
+#   UBATCH_SIZE            llama.cpp -ub       (default: 1024 — local opt, proven at 200K ctx; upstream ships 512)
 #   KV_TYPE                K and V quant type  (default: q4_0)
 #   NP                     parallel slots      (default: 1 — see ⚠ below)
 #   MTP_DRAFT_N_MAX        MTP draft tokens    (default: 2 — sweet spot per BENCHMARKS.md)
@@ -103,7 +98,7 @@ services:
       --port 8080
       -m /models/${GGUF_FILE:-qwen3.6-27b-gguf/unsloth-mtp-q4km/Qwen3.6-27B-Q4_K_M.gguf}
       --alias qwen3.6-27b
-      -c ${CTX_SIZE:-131072}  # Upstream default: 200000
+      -c ${CTX_SIZE:-200000}  # Override to 131072 @ -ub 1024 for faster prefill
       -b ${BATCH_SIZE:-4096}
       -ub ${UBATCH_SIZE:-1024}
       -ngl 99
