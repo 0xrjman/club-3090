@@ -44,7 +44,7 @@ Both composes expose llama.cpp's batch-size + KV controls without editing YAML:
 |---|---|---:|---:|---|
 | `CTX_SIZE` | `-c` | varies by variant | up to ~256K (q4_0 KV) | KV pool size. See per-variant defaults below. |
 | `BATCH_SIZE` | `-b` | `4096` | `2048`-`8192` | Logical prompt-processing batch. Higher can improve prefill throughput if VRAM headroom allows. |
-| `UBATCH_SIZE` | `-ub` | `1024` | `512`-`4096` | Physical microbatch. **Lower this first if long prompts OOM during prefill** — but it also has a major impact on max-context (see next section). |
+| `UBATCH_SIZE` | `-ub` | `512` | `512`-`4096` | Physical microbatch. **Lower this first if long prompts OOM during prefill** — but it also has a major impact on max-context (see next section). |
 | `KV_TYPE` | `--cache-type-k/-v` | `q4_0` | `q4_0`, `q5_0`, `q8_0` | Lower KV bits-per-value = more ctx fits at same VRAM (quality trade-off is small at q4_0 for this model). |
 
 These are throughput-tuning knobs inside llama.cpp. They are orthogonal to
@@ -53,7 +53,7 @@ when `scripts/launch.sh --estate` boots multiple instances.
 
 ### Speed vs context — pick your trade-off
 
-`UBATCH_SIZE` (the `-ub` chunked-prefill chunk) is doing two jobs at once: it caps the **per-pass activation buffer** (cliff-survival for tool prefill) AND it eats into the **VRAM budget that could otherwise go to KV cache**. We ship `1024` as the default sweet spot, but you can rebalance:
+`UBATCH_SIZE` (the `-ub` chunked-prefill chunk) is doing two jobs at once: it caps the **per-pass activation buffer** (cliff-survival for tool prefill) AND it eats into the **VRAM budget that could otherwise go to KV cache**. We ship `512` (synced to upstream v0.8.4 default), but you can rebalance:
 
 **For `llamacpp/mtp-vision` specifically** — the vision encoder (mmproj F16, ~0.8 GB) competes for the same VRAM budget. The shipped 49K ctx + ub=1024 is the **speed-optimal** point on a single 3090. If you need more ctx for agentic vision workloads (UI navigation, multi-step tool use, long screenshots-in-context), drop `-ub` to 512 and you can push context up to 192K with full cliff coverage:
 

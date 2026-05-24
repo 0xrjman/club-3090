@@ -36,20 +36,20 @@
 # 102 → 95 on mainline llama.cpp. froggeric helps the vLLM/Qwen3-Next path,
 # not this engine — so native is the default. Closes opencode hang (#97).
 #
-# Cliff-survival: -ub 1024 (local optimization, upstream ships -ub 512).
+# Cliff-survival: -ub 512 (synced to upstream v0.8.4 default).
 # The 25K tool-prefill check in verify-stress fails at -ub 2048 on tight single-card
-# headroom; -ub 1024 halves the per-pass activation peak and takes the boundary
-# matrix 5/7 → 7/7. Verified at -ub 1024 + 200K ctx: recall passes cleanly
-# at 58K and 91K. If you encounter OOM, override via UBATCH_SIZE=512.
+# headroom. -ub 512 is the upstream-verified safe value — no OOM observed at 200K ctx
+# with recall passing cleanly at 58K and 91K. If you find -ub 1024 gave faster prefill
+# in your setup (matching our earlier local opt), override via UBATCH_SIZE=1024.
 #
 # VRAM budget on 24 GB (Q4_K_M):
 #   weights (Q4_K_M):             ~17.0 GB
 #   KV at 200K (q4_0 K+V):         ~7.6 GB
 #   MTP draft head + overhead:     ~0.5 GB
 #   total:                        ~25.1 GB
-#   scratch (ub 1024):             ~1.0 GB for prompt processing
+#   scratch (ub 512):             ~1.0 GB for prompt processing
 #   peak estimate:                 ~26.1 GB
-#   To fit on 24 GB: override UBATCH_SIZE=512 (scratch → ~0.5 GB).
+#   peak estimate:                 ~25.6 GB (fits on 24 GB at -ub 512). Override to UBATCH_SIZE=1024 to increase scratch to ~1.0 GB (our earlier local opt) if you have VRAM headroom.
 #
 # Quick start:
 #   1. Get the MTP-enabled GGUF:
@@ -64,7 +64,7 @@
 #   GGUF_FILE              path under /models  (default: qwen3.6-27b-gguf/unsloth-mtp-q4km/Qwen3.6-27B-Q4_K_M.gguf)
 #   CTX_SIZE               KV pool size        (default: 200000 — upstream v0.8.4 standard; overridable to 131072 @ -ub 1024 for faster prefill)
 #   BATCH_SIZE             llama.cpp -b        (default: 4096 — on mainline -b does NOT drive VRAM)
-#   UBATCH_SIZE            llama.cpp -ub       (default: 1024 — local opt, proven at 200K ctx; upstream ships 512)
+#   UBATCH_SIZE            llama.cpp -ub       (default: 512 — synced to upstream v0.8.4 default; override to 1024 if tested better)
 #   KV_TYPE                K and V quant type  (default: q4_0)
 #   NP                     parallel slots      (default: 1 — see ⚠ below)
 #   MTP_DRAFT_N_MAX        MTP draft tokens    (default: 2 — sweet spot per BENCHMARKS.md)
@@ -100,7 +100,7 @@ services:
       --alias qwen3.6-27b
       -c ${CTX_SIZE:-200000}  # Override to 131072 @ -ub 1024 for faster prefill
       -b ${BATCH_SIZE:-4096}
-      -ub ${UBATCH_SIZE:-1024}
+      -ub ${UBATCH_SIZE:-512}
       -ngl 99
       -fa on
       --cache-type-k ${KV_TYPE:-q4_0}
