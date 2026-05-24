@@ -98,19 +98,21 @@ For the cross-card TP=2 picture, see [`DUAL_CARD.md`](DUAL_CARD.md).
 
 ## Pick a config
 
-### Long ctx + vision — `long-vision.yml` ⭐
+> ⛔ **The three vLLM configs immediately below — `long-vision`, `long-text`, `long-text-no-mtp` — are blocked on [#167](https://github.com/noonghunna/club-3090/issues/167)** and won't boot until the next Genesis-compatible pin lands. **Use the llama.cpp / ik_llama configs further down** (they work today and are cliff-immune); the vLLM entries are kept here for when the pin returns.
+
+### ⛔ Long ctx + vision — `long-vision.yml` _(vLLM — blocked #167)_
 
 **Workload:** chat with images, vision-aware coding agents, multimodal RAG. Anything where the user might paste a screenshot.
 
 145K + vision tower + TQ3 KV + DS layout + Genesis MTP n=3 + full v7.69 patch stack (PN12 + PN17 + PN25 + PN30 part3 + PN26b + P38B + P15B + PN33 + PN32 GDN chunked-prefill) at mem-util 0.95. `verify-stress.sh`: full 7/7 probes pass on text-only paths post-v7.69; vision tower's persistent ~1 GB tightens single-prompt envelope vs long-text. Code 66 / narr 50 TPS (n=5, CV 2-4%), AL 3.40-3.56.
 
-### Long ctx, text-only — Balanced MTP — `long-text.yml` ⭐
+### ⛔ Long ctx, text-only — Balanced MTP — `long-text.yml` _(vLLM — blocked #167)_
 
-**Workload:** RAG ingest, codebase analysis, book/document Q&A, IDE coding agents (Cline / OpenCode / Roo / Claude Code / Cursor), long conversations. **Default recommendation for steady-state agent + chat.**
+**Workload:** RAG ingest, codebase analysis, book/document Q&A, IDE coding agents (Cline / OpenCode / Roo / Claude Code / Cursor), long conversations. _(Was the steady-state default; while #167 blocks it, use `llamacpp/default` below.)_
 
 180K + no vision + TQ3 KV + DS layout + MTP K=3 + same v7.69 patch stack + local vllm#35975 backport at mem-util 0.93. **60K single-prompt PASS @ 623s wall** (HTTP 200, recall correct, AL=4.00). Code 67 / narr 50 TPS (n=5, CV 2.6%), AL 3.34-3.51. **IDE-agent prompts AND big single prompts up to 60K both work cleanly here.**
 
-### Long ctx, text-only — Max-context — `long-text-no-mtp.yml`
+### ⛔ Long ctx, text-only — Max-context — `long-text-no-mtp.yml` _(vLLM — blocked #167)_
 
 **Workload:** one-shot >50K input where you can wait, don't need MTP, and want maximum KV pool capacity.
 
