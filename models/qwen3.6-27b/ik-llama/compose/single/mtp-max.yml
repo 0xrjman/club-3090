@@ -1,0 +1,129 @@
+# ===========================================================================
+# Profile (at-a-glance):
+#   Model:     Qwen3.6-27B (ubergarm MTP-IQ4_KS GGUF — imatrix IQK quant)
+#   Engine:    ik_llama.cpp (ghcr.io/ikawrakow/ik-llama-cpp:cu13-server)
+#   Topology:  Single 4090 (TP=1) — ctx-derated from 3090 defaults
+#   Drafter:   TWO-STAGE: ngram-mod (self-spec, context-matching) + MTP fallback
+#              Stage 1: ngram-mod n_max=4, n_min=2, ngram-size-n=16
+#              Stage 2: MTP n_max=3, p_min=0.0
+#              PR #1789 (merged 2026-05-15). ngram catches repeated patterns,
+#              MTP fills novel tokens. Best for code.
+#   KV:        q4_0 K + q4_0 V + -khad/-vhad Hadamard (near-lossless quant KV)
+#   Template:  native (GGUF-embedded)
+#   Vision:    NO (text-only)
+#   Default ctx: 160000 — 4090 CTX-DERATED from 200K. Desktop 4090 has ~1-2 GB
+#              higher idle VRAM overhead vs headless 3090, so context ceiling is
+#              ~160K instead of 200K. Benchmark-validated (laurimyllari, May 2026):
+#              160K PASSES, 172K serves single requests but OOM-crashes under
+#              sustained prefill (verify-stress). Start with 160K; if you have
+#              headroom, bump to 180K and re-run verify-stress.
+#   Status:    ⭐ MAX-4090 — single-card optimized for RTX 4090 (24 GB).
+#              4090 benchmark (vs 3090 reference):
+#                Narrative decode: 82.5 TPS (+39%)
+#                Code decode:      120.9 TPS (+24%)
+#                Prompt throughput: 2311 tok/s (+108%)
+#                Max context:      160K (ctx-derated from 200K on 3090)
+#                verify-stress:    8/8 PASS
+#                Soak test:        PASS (0 MiB growth, 100.9% retention)
+#              Quality tied with MTP-only on 8-pack (98/150 vs 100/150 — noise).
+#              See discussion #184 for full 4090 benchmark data.
+#   Best for:  Code-heavy agentic workloads on RTX 4090 (refactoring, test
+#              generation, boilerplate, agentic loops). Code decode +35% over
+#              MTP-only.
+# ---------------------------------------------------------------------------
+# Qwen3.6-27B on ik_llama.cpp — SINGLE RTX 4090, IQ4_KS + TWO-STAGE spec-dec.
+#
+# This is the 4090-optimized MAX variant, based on the validated iq4ks-two-stage
+# profile but with 4090-specific ctx derate (160K vs 200K) to account for
+# desktop GPU idle VRAM overhead.
+#
+# TWO-STAGE SPECULATIVE DECODING (PR #1789):
+#   Instead of MTP alone, this chains two speculators:
+#     1. ngram-mod (self-speculator) — looks up n-gram matches in the existing
+#        context. Zero VRAM cost, instant. Great at repeated patterns (code
+#        boilerplate, imports, test scaffolding, refactor targets).
+#     2. MTP (built-in head) — fallback for tokens ngram can't match.
+#
+#   Tuned on 3090: code decode 81.5 (n=16) -> 90.4 (n=8) -> 97.8 (n=4) -> 78.8
+#   (n=2). On 4090 the same (4, 3) combo yields 120.9 TPS code decode.
+#
+# RECURRENT CHECKPOINT MODE:
+#   --recurrent-ckpt-mode auto (PR #1774) pre-allocates VRAM buffers for
+#   Qwen3.6's DeltaNet SSM state during speculative decoding.
+#   Per-step buffer: ~148 MB x (max(ngram_n_max, mtp_n_max) + 1).
+#   At (4, 3) defaults that's ~0.6 GB.
+#
+# MODEL CHANGE (vs current mtp.yml):
+#   Before: unsloth/Qwen3.6-27B-Q4_K_M.gguf (~17 GB, Q4_K_M quant)
+#   After:  ubergarm/Qwen3.6-27B-MTP-IQ4_KS.gguf (~15.1 GB, IQ4_KS quant)
+#
+#   Why IQ4_KS: ~2 GB leaner (= more VRAM for KV/ctx) AND ~18-20% faster decode
+#   quality-tied on 8-pack (103 vs 102). ik_llama engine also brings IQK fused
+#   CUDA kernels and Hadamard KV for near-lossless q4_0 caching.
+#
+# Quick start:
+#   1. Download the MTP-IQ4_KS GGUF:
+#        MODEL_DIR=/home/rjman/Workspace/AI/Agent/club-3090/models-cache
+#        hf download ubergarm/Qwen3.6-27B-GGUF Qwen3.6-27B-MTP-IQ4_KS.gguf \
+#          --local-dir $MODEL_DIR/qwen3.6-27b-gguf/ubergarm-mtp-iq4ks
+#   2. From club-3090 root:
+#        MODEL_DIR=\$PWD/models-cache docker compose \
+#          -f models/qwen3.6-27b/ik-llama/compose/single/mtp-max.yml up -d
+#   3. curl http://localhost:8020/v1/models
+#
+# Override defaults via .env or shell:
+#   MODEL_DIR              host dir to mount as /models
+#   GGUF_FILE             path under /models (default: ...ubergarm-mtp-iq4ks/...)
+#   CTX_SIZE              KV pool size       (default: 160000 — 4090 ctx-derate)
+#   BATCH_SIZE            llama.cpp -b       (default: 4096)
+#   UBATCH_SIZE           llama.cpp -ub      (default: 1024)
+#   NP                    parallel slots     (default: 1)
+#   KV_TYPE               K and V quant type (default: q4_0)
+#   PORT                  host port          (default: 8020)
+#   CUDA_VISIBLE_DEVICES  which GPU          (default: 0)
+
+services:
+  ik-llama-qwen36-27b-mtp-max:
+    image: ${IK_LLAMA_IMAGE:-ghcr.io/ikawrakow/ik-llama-cpp:cu13-server}
+    container_name: "${ESTATE_CONTAINER:-ik-llama-qwen36-27b-mtp-max}"
+    restart: unless-stopped
+    ports:
+      - "${ESTATE_PORT:-${PORT:-8020}}:8080"
+    volumes:
+      - "${MODEL_DIR:-../../../../../models-cache}:/models:ro"
+    command: >-
+      --host 0.0.0.0
+      --port 8080
+      --model /models/${GGUF_FILE:-qwen3.6-27b-gguf/ubergarm-mtp-iq4ks/Qwen3.6-27B-MTP-IQ4_KS.gguf}
+      --alias qwen3.6-27b
+      -ngl 99
+      --ctx-size ${CTX_SIZE:-160000}
+      -b ${BATCH_SIZE:-4096}
+      -ub ${UBATCH_SIZE:-1024}
+      -np ${NP:-1}
+      -ctk ${KV_TYPE:-q4_0}
+      -ctv ${KV_TYPE:-q4_0}
+      -khad
+      -vhad
+      -ngld 99
+      --spec-stage ngram-mod:n_max=${NGRAM_N_MAX:-4},n_min=${NGRAM_N_MIN:-2},spec-ngram-size-n=${NGRAM_SIZE_N:-16}
+      --spec-stage mtp:n_max=${MTP_N_MAX:-3},draft-p-min=${MTP_P_MIN:-0.0}
+      --recurrent-ckpt-mode auto
+      --merge-qkv
+      -fa on
+      --jinja
+      --parallel-tool-calls
+      --reasoning ${REASONING:-off}
+      --reasoning-format ${REASONING_FORMAT:-deepseek}
+      --temp ${TEMP:-${TEMPERATURE:-0.6}}
+      --top-p ${TOP_P:-0.95}
+      --top-k ${TOP_K:-20}
+      --min-p ${MIN_P:-0.0}
+      --repeat-penalty ${REPEAT_PENALTY:-1.0}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${ESTATE_GPUS:-${CUDA_VISIBLE_DEVICES:-0}}"]
+              capabilities: [gpu]

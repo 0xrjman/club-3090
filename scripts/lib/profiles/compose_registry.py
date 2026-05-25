@@ -297,6 +297,13 @@ COMPOSE_REGISTRY = {
         compose_path="models/qwen3.6-27b/ik-llama/compose/single/iq4ks-two-stage.yml",
         default_port=8020,
     ),
+    "ik-llama/mtp-max": _entry(
+        model="qwen3.6-27b", weights_variant="gguf", workload="fast-chat",
+        engine="llama-cpp-local", drafter="qwen-mtp-builtin", kv_format="q4_0",
+        tp=1, max_ctx=160000, max_num_seqs=1, mem_util=None,
+        compose_path="models/qwen3.6-27b/ik-llama/compose/single/mtp-max.yml",
+        default_port=8020,
+    ),
 
     # Gemma 4 31B, vLLM.
     "vllm/gemma-mtp-tp1": _entry(
