@@ -7,7 +7,10 @@ Guidance for AI coding agents (Claude Code, Cursor, Copilot, Continue, etc.) wor
 Before making non-trivial changes:
 
 - [`README.md`](README.md) — what the repo is, two-routes framing, repo layout
+- [`docs/README.md`](docs/README.md) — **the docs index** (user track + contributor track); start here to find any guide
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — current stack state (services, ports, paths, model + KV config)
 - [`docs/SINGLE_CARD.md`](docs/SINGLE_CARD.md) / [`docs/DUAL_CARD.md`](docs/DUAL_CARD.md) — pick-by-workload guidance + the cliffs they reference
+- [`docs/ADDING_MODELS.md`](docs/ADDING_MODELS.md) — add a model: serve-locally vs the curated-catalog workflow (see "Adding a model" below)
 - [`docs/UPSTREAM.md`](docs/UPSTREAM.md) — every upstream issue / PR we depend on or have filed (see "Upstream issues" section below for why this matters)
 - [`models/qwen3.6-27b/INTERNALS.md`](models/qwen3.6-27b/INTERNALS.md) — DFlash forensics, AutoRound rationale, Marlin pad fork, MTP head
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — what kinds of PRs land cleanly + benchmark + verify protocol
