@@ -15,11 +15,30 @@ Common questions about club-3090. If your question isn't here, open a [GitHub Di
 
 ### Can I use a 4090 instead of a 3090?
 
-Yes — 4090 (Ada, sm_89) is strictly better than 3090 (Ampere, sm_86) for everything we ship. Slightly different kernel paths but no patches needed. Caveats: vLLM Genesis patches are tested on Ampere; tools should still work but TPS scaling is untested. Open an issue with numbers if you bench it.
+Yes. The 4090 (Ada, sm_89) is strictly better than 3090 (Ampere, sm_86) for everything we ship — same 24 GB VRAM envelope but better silicon. Cross-rig measurements:
+
+- @laurimyllari Qwen3.6-35B-A3B ik `--fit` (Mudler APEX I-Compact): **205 / 256 TPS** ([discussion #241](https://github.com/noonghunna/club-3090/discussions/241))
+- @laurimyllari Qwen3.6-27B `ik-llama/iq4ks-two-stage`: **82.5 / 120.9 TPS** (+39% narr / +24% code over 3090)
+
+vLLM Genesis patches work cleanly on Ada.
+
+**Watch out for the context derate.** A 24 GB 4090 carries more idle desktop + driver VRAM than a headless 3090, so single-card context ceilings land **~15–20% lower**. Observed: `long-text.yml` 180K → 90K, ik two-stage 200K → 160K, `dual-dflash-noviz` 200K → 180K. Start below the 3090 number and verify with `verify-stress.sh` (watch its ceiling VRAM-margin line).
+
+The composes don't currently inject Ada-specific FP8-native-compute defaults — vLLM auto-detects most of it, but the explicit-flag path is tracked in [#246](https://github.com/noonghunna/club-3090/issues/246).
 
 ### Can I use a 5090?
 
-Should work for vLLM (Blackwell adds new kernels but back-compat). The Marlin pad-sub-tile-n fork we mount targets Ampere edge cases — on Blackwell you can probably drop the `/opt/ai/engines/vllm/primary/` mount. Not validated yet. We'd love numbers from a 5090 rig — use the [Numbers from your rig](https://github.com/noonghunna/club-3090/issues/new?template=numbers-from-your-rig.yml) issue template.
+Yes — and the 32 GB envelope unlocks single-card configs the 3090 can't fit. Cross-rig measurements:
+
+- @apnar Gemma 4 31B `dual.yml`-shape forced TP=1: **159.67 / 215.10 TPS** (+46% narr / +51% code over 2× 3090 TP=2 on the same model)
+- @apnar Gemma 4 31B `dual-dflash.yml` forced TP=1: **150.40 / 261.06 TPS**
+- @efschu Qwen3.6-27B `dual-dflash.yml`-shape forced TP=1: **126.53 / 200.11 TPS** (highest single-card code TPS on the matrix)
+
+The 32 GB headroom clears Ampere boot OOMs — e.g. Gemma 4 single-card configs that don't fit on 24 GB. Vendored Marlin patches we ship for sm_86 edge cases are no-ops on Blackwell (vLLM auto-selects CUTLASS Machete on SM 9.0+); you can ignore them.
+
+`models/gemma-4-26b-a4b/vllm/compose/dual/docker-compose.yml` (Intel AutoRound INT4) currently `boot fail (SM86)` because Marlin can't handle the `moe_intermediate_size=704` K-dim alignment — SM 9.0+ has CUTLASS Machete which can. A 5090 / Pro 6000 should boot it cleanly; please report numbers if you try.
+
+The composes don't currently use Blackwell-specific paths (FP4 quant, FP8 native attention compute) — tracked in [#246](https://github.com/noonghunna/club-3090/issues/246). Numbers from your rig are valuable: use the [Numbers from your rig](https://github.com/noonghunna/club-3090/issues/new?template=numbers-from-your-rig.yml) issue template.
 
 ### Do I need NVLink?
 
@@ -184,6 +203,31 @@ bash scripts/rebench-full.sh \
 ```
 
 The chained scripts run in host-only mode (no `docker logs` / `docker inspect` scrapes) when `--url` is set, so the entire suite works against any OpenAI-API endpoint.
+
+### Which KV-cache quant should I use? (`q4_0` / `q5_0` / `turbo3` / `fp8`)
+
+KV-cache quant trades **quality ↔ context ceiling ↔ a little speed**, and the metric that matters is **tail precision** (99.9th-percentile KL divergence), not perplexity — the worst 0.1% of positions are exactly where quantization breaks JSON keys, closing braces, and tool-call grammar. [Anbeeld's KV-quant long-context benchmarks](https://anbeeld.com/articles/kv-cache-quantization-benchmarks-for-long-context) measured this on **Qwen3.6-27B / single RTX 3090 — the same model + GPU as this stack**:
+
+| K / V | % of bf16 KV | tail precision | use |
+|---|---:|---:|---|
+| `q8_0` / `q6_0` | 47% | 94.3% | best you'd actually run |
+| `q5_0` / `q5_0` | 34% | 93.2% | quality default (coding / agents / JSON) |
+| `q5_0` / `q4_1` | 33% | 92.7% | VRAM-constrained quality |
+| **`q4_0` / `q4_0`** | **28%** | **88.9%** | **shipped default — favors max context** |
+| `turbo3_tcq` | 20% | 81.6% | extreme context only — visible loss on structured output |
+| `turbo2` | 14% | 54.4% | last resort (no code / JSON / math) |
+
+Two takeaways: **(1) K is the sensitive cache** — keep K higher and starve V (`q5_0`/`q4_1` beats symmetric `q4_1` at the same size); **(2) turbo/TCQ only pays at 2–3 bit** — at 4+ bits scalar `q4_0`/`q5_0` wins, and turbo3 is *not* quality-neutral (the TurboQuant paper's "neutral at 3.5 bits" is a perplexity-average claim; the tail disagrees).
+
+**On this stack:** the llama.cpp / ik_llama composes default to `q4_0` (max context — the per-token loss is small *on average*, but meaningful on the tail for structured output). If you serve **coding / agent / tool-calling** traffic, bump quality with the `KV_TYPE` override (shell env wins over `.env`):
+
+```bash
+KV_TYPE=q5_0 bash scripts/switch.sh llamacpp/mtp     # ~93% tail vs q4_0's ~89%, at some context cost
+```
+
+On vLLM, `turboquant_3bit_nc` is the long-context default; where context allows, prefer `fp8_e5m2` (≈ q8-tier tail) via `KV_CACHE_DTYPE`.
+
+**Caveat:** a `verify-stress` 7/7 pass (incl. the 91K needle) does **not** certify KV-quant tail-safety — synthetic needle retrieval is blind to this drift (see [docs/CLIFFS.md](CLIFFS.md)). The gap also **grows at longer context**, so the choice matters more the bigger your prompts.
 
 ---
 
