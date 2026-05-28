@@ -147,6 +147,18 @@ Quality: line for compose schema field (paste into compose YAML header):
 Quality:   ToolCall-15 14/15 (93%) · InstructFollow-15 13/15 (87%) · StructOutput-15 15/15 (100%) · DataExtract-15 12/15 (80%) · ReasonMath-15 11/15 (73%) (--medium, packs v1.0.x, 2026-05-09)
 ```
 
+## Per-scenario timeouts
+
+`quality-test.sh` forwards to `benchlocal-cli`, which sizes each scenario's timeout automatically — you rarely need to set one. Precedence (highest wins):
+
+1. **Manual** — `--timeout-per-case N` (or `TIMEOUT_PER_CASE=N`): used verbatim.
+2. **Auto-scaling (default)** — the budget scales by the endpoint's measured decode speed and, for thinking-on runs, by the thinking-token budget. A one-shot startup probe measures the rig's decode TPS (and fails fast if the endpoint is unreachable, rather than hanging). The scaling deliberately **over-budgets** — a timeout is a safety ceiling, not a target — which is what keeps thinking-on packs from spuriously timing out. Exact formula + flags (`--measured-tps` / `--reference-tps` / `--retry-on-timeout`): [benchlocal-cli README → Per-case timeouts](https://github.com/noonghunna/benchlocal-cli#per-case-timeouts).
+3. **Static default** — the pack's built-in `default_max_seconds`.
+
+**Don't hand-set `--timeout-per-case` to "fix" a slow run** unless you've confirmed the auto-probe measured wrong — the over-budget is intentional.
+
+> **Planned (not yet built):** an *opt-in* tier that sizes timeouts from a **soak-derived per-context-depth TPS curve** — a real "how fast at depth X" measurement for your exact rig/config, captured into the runtime measurement-record — instead of the single empty-context startup probe. It would be strictly opt-in and fall back to the auto-probe/default when no curve exists; measured data is never required. Tracked at [#114](https://github.com/noonghunna/club-3090/pull/114).
+
 ## Sampling & temperature
 
 By default the packs sample at **temperature 0** (greedy) — deterministic and reproducible, so scores are comparable across rigs and across runs. This is the **canonical** baseline, and it's what regression tracking and cross-config ranking should use.
