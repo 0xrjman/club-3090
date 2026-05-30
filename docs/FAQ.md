@@ -247,6 +247,35 @@ For a first install, run `bash scripts/setup.sh` with no model argument in a nor
 
 After setup, run `bash scripts/launch.sh`. The wizard asks which model (filtered to what you've downloaded), then which GPU(s) to use, auto-picks TP for homogeneous sets (PP for heterogeneous), filters variants by hardware fit, shows a per-card VRAM projection from `tools/kv-calc.py` for the suggested default, then boots and runs `verify-full.sh`. Power-user forms still work: `bash scripts/setup.sh qwen3.6-27b`, `bash scripts/launch.sh --variant vllm/dual`, partial flags like `bash scripts/launch.sh --model qwen3.6-27b --gpus 0,1` (skips prompts), `--tp 4 --pp 2` to override parallelism, plus `setup.sh --help` / `launch.sh --help` for the full flag list. This wizard covers the **curated catalog**; for a model *not* in the catalog (any safetensors HF repo), use `scripts/pull.sh` instead — see [docs/PULL.md](PULL.md).
 
+### How do I switch to / try a different model?
+
+Two parts: *what's available* and *what happens if I don't have it yet.*
+
+**List everything.** `bash scripts/switch.sh --list` prints every variant, generated live from the compose registry (the single source of truth) — so the list never drifts from what the stack can actually run.
+
+**Switch to one you've already downloaded.** Either re-run the wizard (`bash scripts/launch.sh`, which filters the menu to models present in `MODEL_DIR` and verifies the boot), or go direct by slug:
+
+```bash
+bash scripts/launch.sh --variant vllm/dual      # boots + runs verify-full.sh
+bash scripts/switch.sh vllm/long-vision          # stateless: down the old, up the new
+```
+
+`launch.sh` wraps `switch.sh` and then `verify-full.sh`; `switch.sh` is the bare down-old/up-new if you just want the swap.
+
+**If the weights aren't downloaded, it does NOT auto-pull — by design.** Pointing `launch.sh` / `switch.sh` at a model you don't have stops with a hint instead of silently fetching 20+ GB:
+
+```
+[launch] ERROR: <model> is not installed under <MODEL_DIR>.
+[launch]        Run: bash scripts/setup.sh <model>
+```
+
+Downloading is a deliberate, separate step:
+
+- **Curated catalog model** → `bash scripts/setup.sh <model>` (grabs the right weights + patches, then verifies).
+- **Any other safetensors HF repo** → `bash scripts/pull.sh <org/Model> --profile-like <a-registry-key>`. It runs *our* KV math and **gates the download on whether the model fits your GPUs first** (add `--dry-run` to just evaluate, no download). That fit-check is precisely *why* it isn't auto-on-launch — the stack refuses to pull something it already knows won't run. Full guide: [docs/PULL.md](PULL.md).
+
+See also [How do I pick the right model + variant?](#how-do-i-pick-the-right-model--variant) for the first-install wizard, and [The model I want isn't in the supported list](#the-model-i-want-isnt-in-the-supported-list--can-i-still-run-it) for the pull-gate in depth.
+
 ### `bash scripts/setup.sh qwen3.6-27b` is downloading 20+ GB. Where does it go? / Can I put models on a different drive?
 
 Yes. The knob is `MODEL_DIR`, with **four ways** to set it (priority order):
