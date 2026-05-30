@@ -886,16 +886,16 @@ profiles:
       insertion_points:
         volumes: present    # overlay/sidecar mount anchor
         entrypoint: absent  # sidecar invoke anchor
-  vllm/qwen-a3b-preview:
-    compose_path: models/qwen3.6-35b-a3b/vllm/compose/dual/autoround-int4/preview.yml
+  vllm/qwen-35b-a3b-dual:
+    compose_path: models/qwen3.6-35b-a3b/vllm/compose/dual/autoround-int4/fp8.yml
     genesis_equipped: false
     genesis_equipped_evidence: no GENESIS_* token in compose and kv_format is not turboquant*
     compose_service_template:
-      source: models/qwen3.6-35b-a3b/vllm/compose/dual/autoround-int4/preview.yml  # whole service definition captured verbatim from this file
+      source: models/qwen3.6-35b-a3b/vllm/compose/dual/autoround-int4/fp8.yml  # whole service definition captured verbatim from this file
       param_slots:
         ports: { source: E.default_port, value: 8051 }
         tensor_parallel_size: { token: '${TP}', source: E.tp, value: 2 }
-        max_model_len: { token: '${MAX_MODEL_LEN}', source: E.max_ctx, value: 16384 }
+        max_model_len: { token: '${MAX_MODEL_LEN}', source: E.max_ctx, value: 262144 }
         gpu_memory_utilization: { token: '${GPU_MEMORY_UTILIZATION}', source: E.mem_util, value: 0.92 }
         kv_cache_dtype: { token: '${KV_CACHE_DTYPE}', source: 'kv_arg(E.kv_format)', kv_format: fp8_e5m2, value: 'fp8_e5m2' }
         max_num_seqs: { token: '--max-num-seqs', source: E.max_num_seqs, value: 1 }
@@ -907,7 +907,7 @@ profiles:
           policy: governed   # locked design v6 §88 security model
           emit_rule: 'only if arch trc gate resolves evidence-cited false-permitted; never blind-passthrough'
       constants:
-        image: '${VLLM_IMAGE:-vllm/vllm-openai:nightly-${VLLM_NIGHTLY_SHA}}'   # captured constant; engine pin flows via env, NOT rewritten
+        image: '${VLLM_IMAGE:-vllm/vllm-openai:v0.22.0}'   # captured constant; engine pin flows via env, NOT rewritten
         verbatim_from_compose: [shm_size, ipc, deploy.resources, model_cache_volume, base_environment, base_entrypoint, '--model', '--served-model-name', '--quantization', '--dtype', '--tool-call-parser', '--chat-template', '--reasoning-parser', '--default-chat-template-kwargs', '--enable-prefix-caching', '--enable-chunked-prefill', '--enforce-eager']
       insertion_points:
         volumes: present    # overlay/sidecar mount anchor

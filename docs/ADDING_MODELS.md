@@ -477,6 +477,8 @@ vision_capable: false
 
 Mirror `models/qwen3.6-27b/vllm/compose/dual/autoround-int4/fp8-mtp.yml` shape, swap model path + adjust `--max-model-len` based on KV_MATH projections.
 
+> _Illustrative add-time snapshot. This model was later validated + promoted out of preview: the live dual compose is now `dual/autoround-int4/fp8.yml` (slug `vllm/qwen-35b-a3b-dual`, **262K + vision**, no MTP, vLLM v0.22.0) — see BENCHMARKS.md._
+
 **Per-card budget projection from KV_MATH**:
 
 - Weights / 2 = ~11.5 GB (INT4)

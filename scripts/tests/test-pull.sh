@@ -649,11 +649,11 @@ moe2 = {
     "num_local_experts": 128, "torch_dtype": "bfloat16",
 }
 c0 = G.c0_engine_support(
-    "vllm/qwen-a3b-preview", P.D.DeriveResult(
+    "vllm/qwen-35b-a3b-dual", P.D.DeriveResult(
         slug=s, profile={"arch": "Qwen3_5MoeForConditionalGeneration",
                          "auto_map": False}),
     path="B", hardware_sm=SM_86, root=root)
-r = P.run_pull(s, "vllm/qwen-a3b-preview", path="B", hardware_sm=SM_86,
+r = P.run_pull(s, "vllm/qwen-35b-a3b-dual", path="B", hardware_sm=SM_86,
                 fetcher=ff_derived(s, moe2), profiles=profiles,
                 statvfs=BIG_DISK, experimental_arch=True)
 check(c0.state is G.C0State.ENGINE_SUPPORTED
@@ -906,7 +906,7 @@ moec = {
     "num_attention_heads": 32, "num_key_value_heads": 8,
     "num_local_experts": 128, "torch_dtype": "bfloat16",
 }
-r = P.run_pull(s, "vllm/qwen-a3b-preview", path="B", hardware_sm=SM_86,
+r = P.run_pull(s, "vllm/qwen-35b-a3b-dual", path="B", hardware_sm=SM_86,
                 fetcher=ff_derived(s, moec, weight_gb=300.0),
                 profiles=profiles, statvfs=TINY_DISK,
                 experimental_arch=True)
@@ -916,7 +916,7 @@ check(r.stratum is P.Stratum.C2A_DISK,
 
 # stratum-5 BEFORE [B]/[C1]: ineligible model never reaches a verdict.
 s = "fixtures/order-s5"
-r = P.run_pull(s, "vllm/qwen-a3b-preview", path="B", hardware_sm=SM_86,
+r = P.run_pull(s, "vllm/qwen-35b-a3b-dual", path="B", hardware_sm=SM_86,
                 fetcher=ff_derived(s, moec, weight_gb=4.0),
                 profiles=profiles, statvfs=BIG_DISK,
                 experimental_arch=True)

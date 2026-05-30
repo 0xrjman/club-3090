@@ -469,19 +469,19 @@ COMPOSE_REGISTRY = {
         default_port=8050,
         kvcalc_key="qwen3.6-35b-a3b:qwen-a3b-preview-single",
     ),
-    "vllm/qwen-a3b-preview": _entry(
+    "vllm/qwen-35b-a3b-dual": _entry(
         model="qwen3.6-35b-a3b", weights_variant="autoround-int4", workload="fast-chat",
         engine="vllm-nightly-clean", drafter=None, kv_format="fp8_e5m2",
-        tp=2, max_ctx=16384, max_num_seqs=1, mem_util=0.92,
-        compose_path="models/qwen3.6-35b-a3b/vllm/compose/dual/autoround-int4/preview.yml",
+        tp=2, max_ctx=262144, max_num_seqs=1, mem_util=0.92,
+        compose_path="models/qwen3.6-35b-a3b/vllm/compose/dual/autoround-int4/fp8.yml",
         default_port=8051,
-        kvcalc_key="qwen3.6-35b-a3b:qwen-a3b-preview",
+        kvcalc_key="qwen3.6-35b-a3b:qwen-35b-a3b-dual",
     ),
     "vllm/qwen-a3b-preview-mtp": _entry(
         model="qwen3.6-35b-a3b", weights_variant="autoround-int4", workload="fast-chat",
         engine="vllm-nightly-clean", drafter="qwen-mtp-builtin", kv_format="fp8_e5m2",
         tp=2, max_ctx=16384, max_num_seqs=1, mem_util=0.92,
-        compose_path="models/qwen3.6-35b-a3b/vllm/compose/dual/autoround-int4/preview-mtp.yml",
+        compose_path="models/qwen3.6-35b-a3b/vllm/compose/dual/autoround-int4/fp8-mtp.yml",
         default_port=8052,
         kvcalc_key="qwen3.6-35b-a3b:qwen-a3b-preview-mtp",
     ),
@@ -500,5 +500,5 @@ DEFAULTS = {
     ("gemma-4-26b-a4b", "vllm", "single"): "vllm/gemma-a4b-single",
     ("gemma-4-26b-a4b", "vllm", "dual"): "vllm/gemma-a4b",
     ("qwen3.6-35b-a3b", "vllm", "single"): "vllm/qwen-a3b-preview-single",
-    ("qwen3.6-35b-a3b", "vllm", "dual"): "vllm/qwen-a3b-preview",
+    ("qwen3.6-35b-a3b", "vllm", "dual"): "vllm/qwen-35b-a3b-dual",
 }
