@@ -91,6 +91,7 @@
 #   REASONING             thinking gate      (default: off)
 #   REASONING_FORMAT      reasoning routing  (default: deepseek)
 #   PORT                  host port          (default: 8020)
+#   ALIAS                 model alias        (default: qwen3.6)
 #   CUDA_VISIBLE_DEVICES  which GPU          (default: 0)
 
 services:
@@ -113,6 +114,7 @@ services:
       --host 0.0.0.0
       --port 8080
       --model /models/${GGUF_FILE:-qwen3.6-27b-gguf/ubergarm-mtp-iq4ks/Qwen3.6-27B-MTP-IQ4_KS.gguf}
+      --alias ${ALIAS:-qwen3.6}
       -ngl 99
       --ctx-size ${CTX_SIZE:-200000}
       -b ${BATCH_SIZE:-4096}

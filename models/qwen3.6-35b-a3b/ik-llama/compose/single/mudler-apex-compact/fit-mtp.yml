@@ -69,6 +69,7 @@
 #   REASONING              thinking gate       (default: off)
 #   REASONING_FORMAT       reasoning routing   (default: deepseek)
 #   PORT                   host port           (default: 8057)
+#   ALIAS                  model alias         (default: qwen3.6)
 #   CUDA_VISIBLE_DEVICES   which GPU to use    (default: 0)
 
 services:
@@ -85,6 +86,7 @@ services:
       --host 0.0.0.0
       --port 8080
       --model /models/${GGUF_FILE:-qwen3.6-35b-a3b-gguf/mudler-apex-mtp/Qwen3.6-35B-A3B-APEX-MTP-I-Compact.gguf}
+      --alias ${ALIAS:-qwen3.6}
       --fit
       --fit-margin 256
       -ngl 99
