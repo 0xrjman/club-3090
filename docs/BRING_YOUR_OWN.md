@@ -104,12 +104,17 @@ verify-stress's needle ladder requires **exact** recall at each depth (10K / 30K
 that allocates 200K but misses the needle at 90K is not a 200K model.
 
 ### KV-cache quant — context vs fidelity
-Lower KV bits buy more context for a small quality cost; the lever is per-stream
-K and V type:
-- `-ctk q4_0 -ctv q4_0` — max context (cheapest KV).
-- `-ctk q8_0 -ctv q5_0` (or `q4_1`) + `-khad -vhad` — **asymmetric K-high /
-  V-low** (Anbeeld pattern): keeps precision-sensitive K accurate, quantises V
-  harder. A little VRAM for tighter quality at slightly less context.
+Lower KV bits buy more context for a small quality cost — but **the lever differs
+by engine**:
+- **llama.cpp / ik-llama / beellama** expose **separate K and V** cache types, so
+  you can quantise them *asymmetrically*: `-ctk q4_0 -ctv q4_0` for max context
+  (cheapest KV), or `-ctk q8_0 -ctv q5_0` (or `q4_1`) + `-khad -vhad` for the
+  **K-high / V-low** pattern (Anbeeld) — keep the precision-sensitive K accurate,
+  quantise V harder, for tighter quality at slightly less context.
+- **vLLM** has a **single `--kv-cache-dtype`** applied to *both* K and V — there
+  is **no per-stream K/V split** (no `-ctk`/`-ctv`, no `-khad/-vhad`). It's `auto`
+  (bf16) or `fp8_e5m2` / `fp8_e4m3`; on Ampere (sm_86) FP8 KV is a **storage-only**
+  optimization (no native FP8 compute), not a quality knob you tune per-stream.
 - Re-run verify-stress + a quality `--medium` after any KV change. See the
   KV-cache entry in [`FAQ.md`](FAQ.md).
 
