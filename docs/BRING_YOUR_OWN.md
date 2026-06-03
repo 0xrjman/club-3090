@@ -111,10 +111,14 @@ by engine**:
   (cheapest KV), or `-ctk q8_0 -ctv q5_0` (or `q4_1`) + `-khad -vhad` for the
   **K-high / V-low** pattern (Anbeeld) — keep the precision-sensitive K accurate,
   quantise V harder, for tighter quality at slightly less context.
-- **vLLM** has a **single `--kv-cache-dtype`** applied to *both* K and V — there
-  is **no per-stream K/V split** (no `-ctk`/`-ctv`, no `-khad/-vhad`). It's `auto`
-  (bf16) or `fp8_e5m2` / `fp8_e4m3`; on Ampere (sm_86) FP8 KV is a **storage-only**
-  optimization (no native FP8 compute), not a quality knob you tune per-stream.
+- **vLLM** applies **one KV format to both K and V** — there is **no per-stream
+  K/V split** (no `-ctk`/`-ctv`, no `-khad/-vhad`). Stock `--kv-cache-dtype` is
+  `auto` (bf16) / `fp8_e5m2` / `fp8_e4m3`, and on Ampere (sm_86) FP8 KV is
+  **storage-only** (no native FP8 compute). The **INT8 KV** path this stack uses
+  (INT8 per-token-head, "PTH") is **not** a stock dtype — it's a **vendored engine
+  patch**, shipped via the `int8.yml` composes, so you only get it by running a
+  patched compose, not by flipping a flag. Either way it's still one whole-cache
+  format, not an asymmetric K/V knob.
 - Re-run verify-stress + a quality `--medium` after any KV change. See the
   KV-cache entry in [`FAQ.md`](FAQ.md).
 
