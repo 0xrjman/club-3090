@@ -1038,22 +1038,31 @@ preflight_autodetect_endpoint() {
     return 0   # both already set — caller knows what they're doing
   fi
 
-  # Scan for one of our containers + its `0.0.0.0:<host>->8000/tcp` mapping.
-  # Recognises the canonical club-3090 prefixes (vllm-qwen36-27b,
-  # llama-cpp-qwen36-27b, ik-llama-qwen36-27b, vllm-gemma-4-31b) plus the sglang experimental tree.
-  # Users running endpoint-first via `--url` to rebench-full.sh bypass this
-  # entirely (PREFLIGHT_NO_AUTODETECT=1 set there).
+  # Detect a running inference container by its ENGINE-INTERNAL port mapping
+  # (vLLM 8000 / llama.cpp 8080 / sglang 30000), NOT a hardcoded model-name
+  # allowlist — so any compose is found regardless of model: gemma-4-12b,
+  # qwen-35b-a3b, beellama, a BYO container, etc. (#310: the old allowlist only
+  # knew qwen36-27b / gemma-4-31b, so everything else silently fell back to 8020).
+  # Among matches, prefer a recognised club-3090 engine-family prefix; otherwise
+  # take the first. Users running endpoint-first via `--url` bypass this entirely
+  # (PREFLIGHT_NO_AUTODETECT=1 set there).
   #
-  # The `|| true` is load-bearing: grep -E returns 1 when no container
-  # matches, which under `set -euo pipefail` in the caller silently aborts
-  # rebench-full.sh before it reaches its own "endpoint not responding"
-  # error path. Empty `found_line` is what we want for the no-container case.
-  local found_line
-  found_line=$(docker ps --format '{{.Names}}|{{.Ports}}' 2>/dev/null \
-    | grep -E '^(vllm-qwen36-27b|llama-cpp-qwen36-27b|ik-llama-qwen36-27b|vllm-gemma-4-31b|sglang-qwen36-27b)' \
-    | head -1 || true)
-  if [[ -z "$found_line" ]]; then
-    return 0   # nothing running; defaults stand
+  # The `|| true` is load-bearing: grep -E returns 1 when nothing matches, which
+  # under `set -euo pipefail` in the caller would silently abort rebench-full.sh
+  # before its own "endpoint not responding" path. Empty = the no-container case.
+  local engine_lines found_line
+  engine_lines=$(docker ps --format '{{.Names}}|{{.Ports}}' 2>/dev/null \
+    | grep -E '([0-9]{1,3}\.){3}[0-9]{1,3}:[0-9]+->(8000|8080|30000)/tcp' || true)
+  if [[ -z "$engine_lines" ]]; then
+    return 0   # nothing serving on an engine port; defaults stand
+  fi
+  # Prefer a recognised club-3090 engine-family prefix when several match.
+  found_line=$(printf '%s\n' "$engine_lines" \
+    | grep -E '^(vllm-|llama-cpp-|ik-llama-|sglang-|beellama-)' | head -1 || true)
+  [[ -z "$found_line" ]] && found_line=$(printf '%s\n' "$engine_lines" | head -1)
+  # Several inference containers up → we picked one; tell the user how to override.
+  if [[ "$(printf '%s\n' "$engine_lines" | grep -c .)" -gt 1 ]]; then
+    echo "[autodetect] multiple inference containers running; picked '${found_line%%|*}' — set CONTAINER=/URL= to override" >&2
   fi
 
   local detected_name detected_port
