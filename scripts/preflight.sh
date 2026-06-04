@@ -635,6 +635,10 @@ _preflight_compose_path_default() {
   value="$(printf '%s' "$value" | sed -E 's#\$\{MODEL_DIR[^}]*\}/?##g')"
   value="${value#/models/}"
   value="${value#/root/.cache/huggingface/}"
+  # Strip a trailing `}` left when a path is the DEFAULT inside an outer
+  # ${VAR:-/root/.cache/huggingface/<path>} — the path grep anchors mid-expansion
+  # so it captures `<path>}`. A real model subdir never ends in `}`.
+  value="${value%\}}"
   printf '%s' "$value"
 }
 
@@ -919,7 +923,13 @@ preflight_compose_deps() {
           missing+=("${model_dir}/${subdir}/config.json (HF model)")
         fi
       fi
-    done < <(grep -hoE '/root/\.cache/huggingface/[^"'\''[:space:],}:]+' "${compose_files[@]}" || true)
+    # Char-class must NOT exclude `:` or `}` — model paths can be
+    # `/root/.cache/huggingface/${MODEL_SUBDIR:-default}` (vLLM) and excluding
+    # those truncated the token to `${MODEL_SUBDIR` before _preflight_compose_path_default
+    # could resolve the `:-default`, causing a false "missing" (the gemma-4-12b
+    # MODEL_SUBDIR/SPEC_MODEL_SUBDIR composes). Stop only at real delimiters
+    # (quote / whitespace / comma); the `${VAR:-default}` resolver runs downstream.
+    done < <(grep -hv '^[[:space:]]*#' "${compose_files[@]}" 2>/dev/null | grep -oE '/root/\.cache/huggingface/[^"'\''[:space:],]+' || true)
 
     # Experimental SGLang composes mount individual MODEL_DIR subdirectories to
     # /models/target and /models/drafter instead of using the HF cache mount.
