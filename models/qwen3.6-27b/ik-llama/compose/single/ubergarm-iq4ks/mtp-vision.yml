@@ -131,6 +131,7 @@ services:
       --host 0.0.0.0
       --port 8080
       --model /models/${GGUF_FILE:-qwen3.6-27b-gguf/ubergarm-mtp-iq4ks/Qwen3.6-27B-MTP-IQ4_KS.gguf}
+      --alias ${ALIAS:-qwen3.6}
       --mmproj /models/${MMPROJ_FILE:-qwen3.6-27b-gguf/mmproj-F16.gguf}
       --image-min-tokens ${IMAGE_MIN_TOKENS:-1024}
       --image-max-tokens ${IMAGE_MAX_TOKENS:-1024}
