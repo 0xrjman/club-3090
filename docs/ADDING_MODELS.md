@@ -195,6 +195,14 @@ Place at `models/<model-id>/<engine>/compose/<topology>/<quant-slug>/<serving>.y
 - Topologies: `single`, `dual`, `multi4`
 - Quant slug: exactly matches the `weights_variant` key (`autoround-int4`, `awq`, `unsloth-q4km`, etc.)
 - Serving filename: the feature stack only (`fp8-mtp.yml`, `turbo.yml`, `dflash.yml`, etc.). Do not create `docker-compose.yml` or `default.yml`; defaults are registry pointers.
+- **Registry slug (the key in `compose_registry.py`)** — for **new** models, compose it to mirror the path: **`<engine>/<model>-<topology>-<quant>[-<feature>]`** (the path components `<model>/<engine>/<topology>/<quant>/<serving>` flattened with hyphens, engine first). Make it self-descriptive — reading the slug should tell you the model, card count, quant, and serving stack.
+  - `<engine>` — slug prefix from the rule above: `vllm` / `llamacpp` / `ik-llama` / `beellama`.
+  - `<model>` — short model id: `gemma-12b`, `qwen-35b-a3b`.
+  - `<topology>` — `single` / `dual` / `multi4`.
+  - `<quant>` — the weights family: `bf16`, `int8`, `q8kxl`, `iq4ks`, `awq`, `autoround-int4`, …
+  - `[-<feature>]` — optional serving/drafter modifier: `-mtp`, `-dflash`, `-vision`, `-turbo`.
+  - Examples: `vllm/gemma-12b-dual-bf16-mtp`, `vllm/gemma-12b-single-int8-mtp`, `llamacpp/gemma-12b-single-q8kxl`.
+  - **Grandfathered (do NOT rename):** slugs that predate this scheme stay as-is for backward compatibility — e.g. `vllm/dual` / `vllm/minimal` (qwen3.6-27b), `vllm/gemma-bf16-mtp` / `gemma-mtp-tp1` (gemma-4-31b), `vllm/gemma-a4b` (gemma-4-26b-a4b). Renaming a shipped slug breaks `switch.sh <slug>` for users; apply the convention to **new** models + variants only.
 
 ### Profile header (mandatory)
 
