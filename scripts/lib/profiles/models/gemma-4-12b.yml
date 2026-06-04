@@ -1,0 +1,74 @@
+schema_version: 1
+id: gemma-4-12b
+display_name: Gemma 4 12B (unified)
+family: gemma4-unified
+hidden_size: 3840
+intermediate_size: 15360
+num_hidden_layers: 48
+num_full_attn_layers: 8
+num_sliding_attn_layers: 40
+num_attn_heads: 16
+num_kv_heads: 8
+head_dim_sliding: 256
+global_head_dim: 512
+sliding_window: 1024
+# Model card claims 256K via p-RoPE. Stock vLLM gemma4_unified OOB-crashes on
+# prefill past 131072 because the Gemma4 RoPE cache is sized from
+# max_position_embeddings instead of runtime max_model_len (vllm#39914). The
+# local vllm-gemma4-prope-longctx overlay fixes the cache sizing for vLLM.
+max_ctx_supported: 262144
+attention_k_eq_v: true
+weights:
+  bf16:
+    path: gemma-4-12b-it
+    local_subdir: gemma-4-12b-it
+    size_gb: 23.9
+    format: bf16
+    status: experimental
+    hf_repo: unsloth/gemma-4-12b-it
+    engine: vllm
+    kind: main
+    verify_glob: "*.safetensors"
+  assistant:
+    path: gemma-4-12b-it-assistant
+    local_subdir: gemma-4-12b-it-assistant
+    size_gb: 0.85
+    format: bf16
+    status: experimental
+    hf_repo: google/gemma-4-12B-it-assistant
+    engine: vllm
+    kind: draft
+    verify_glob: "*.safetensors"
+  beellama-q8kxl:
+    path: gemma-4-12b-gguf/unsloth-ud-q8kxl
+    local_subdir: gemma-4-12b-gguf/unsloth-ud-q8kxl
+    size_gb: 13.6
+    format: gguf
+    status: experimental
+    hf_repo: unsloth/gemma-4-12b-it-GGUF
+    files:
+      - gemma-4-12b-it-UD-Q8_K_XL.gguf
+    engine: beellama
+    kind: gguf
+    verify_glob: "*.gguf"
+  unsloth-q8kxl:
+    path: gemma-4-12b-gguf/unsloth-ud-q8kxl
+    local_subdir: gemma-4-12b-gguf/unsloth-ud-q8kxl
+    size_gb: 13.6
+    format: gguf
+    status: experimental
+    hf_repo: unsloth/gemma-4-12b-it-GGUF
+    files:
+      - gemma-4-12b-it-UD-Q8_K_XL.gguf
+    engine: llama-cpp
+    kind: gguf
+    verify_glob: "*.gguf"
+default_weight_variant: bf16
+compatible_drafters:
+  - gemma-12b-it-assistant
+valid_tp:
+  - 1
+  - 2
+  - 4
+  - 8
+requires_genesis: false
