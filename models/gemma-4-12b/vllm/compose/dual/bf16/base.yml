@@ -13,7 +13,13 @@
 #              vllm-gemma4-prope-longctx so the fixed cache is sized from runtime max_model_len.
 #              Drop/re-test when vllm#39914 lands upstream.
 #   Genesis:   N/A — Genesis is Qwen3-Next-specific
-#   Status:    🧪 Experimental — arch-preview image; sm_86 support for gemma4_unified UNVERIFIED
+#   Status:    🧪 Experimental — validated on 2× 3090 sm_86 (bench 2026-06-04). Stays 🧪
+#              while the image is an ephemeral arch-preview tag (gemma4-unified, 0.1.dev) and
+#              256K rides the vendored p-RoPE overlay → promote to ⚠️ caveats when
+#              gemma4_unified lands in a STABLE vLLM release (cf. the beellama dev-branch rule).
+#   Quality:   output quality ≡ mtp.yml (MTP is speed-only / output-lossless) — 8-pack
+#              94/150 (63%) thinking-OFF · soak PASS, measured on the MTP sibling. This
+#              no-MTP compose is benched for TPS only (47.5 / 47.5).
 #   Best for:  bring-up — first vLLM serving of Gemma-4-12B on dual 3090 (no drafter)
 # ---------------------------------------------------------------------------
 # Why dual + this shape (Ampere, NOT vLLM's H100/TP=1 reference recipe):

@@ -13,7 +13,13 @@
 #              vllm-gemma4-prope-longctx so the fixed cache is sized from runtime max_model_len.
 #              Drop/re-test when vllm#39914 lands upstream.
 #   Genesis:   N/A — Genesis is Qwen3-Next-specific
-#   Status:    🧪 Experimental — arch-preview image; sm_86 support UNVERIFIED
+#   Status:    🧪 Experimental — validated on 2× 3090 sm_86 (rebench-full 2026-06-04: bench +
+#              soak + 8-pack all pass). Stays 🧪 while the image is an ephemeral arch-preview
+#              tag (gemma4-unified, 0.1.dev) and 256K rides the vendored p-RoPE overlay →
+#              promote to ⚠️ caveats when gemma4_unified lands in a STABLE vLLM release.
+#   Quality:   94/150 (63%) thinking-OFF default · 85/150 (57%) reasoning-ON (think-ON lower —
+#              over-reasoning/timeouts; thinking-OFF is the default). Soak PASS: 0 err · 0/100
+#              silent-empty · 0 MiB growth · p50 115.7 TPS · 94.8% retention. rebench-full 2026-06-04.
 #   Best for:  the target config — dual-3090 Gemma-4-12B + assistant spec-dec (vLLM's recipe, Ampere-adapted)
 # ---------------------------------------------------------------------------
 # base.yml (no-draft sibling) + the assistant speculative-decode draft, mirroring
