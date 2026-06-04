@@ -333,6 +333,19 @@ COMPOSE_REGISTRY = {
         kvcalc_key="SKIP",
     ),
 
+    # ik_llama.cpp — RTX 5090 variant. Same IQ4_KS (ubergarm) weights, but
+    # tuned for 32 GB Blackwell (np=2 for compute saturation, full 262K ctx,
+    # q8_0 KV for higher fidelity). The 32 GB envelope clears the Ampere
+    # 24 GB boot OOM on large-ctx profiles.
+    "ik-llama/rtx5090-mtp": _entry(
+        model="qwen3.6-27b", weights_variant="ubergarm-iq4ks", workload="fast-chat",
+        engine="llama-cpp-local", drafter="qwen-mtp-builtin", kv_format="q8_0",
+        tp=1, max_ctx=262144, max_num_seqs=2, mem_util=None,
+        compose_path="models/qwen3.6-27b/ik-llama/compose/single/rtx5090/mtp.yml",
+        default_port=8020,
+        kvcalc_key="SKIP",
+    ),
+
     # Qwen3.6-27B PRISM-PRO-DQ (Ex0bit dynamic-quant GGUF) — community-experimental, ik-llama.
     "ik-llama/prism-pro-dq-mtp": _entry(
         model="qwen3.6-27b", weights_variant="ex0bit-prism-pro-dq", workload="fast-chat",
