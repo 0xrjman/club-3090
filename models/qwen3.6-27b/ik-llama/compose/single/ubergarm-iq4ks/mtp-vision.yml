@@ -136,7 +136,7 @@ services:
       --image-min-tokens ${IMAGE_MIN_TOKENS:-1024}
       --image-max-tokens ${IMAGE_MAX_TOKENS:-1024}
       -ngl 99
-      --ctx-size ${CTX_SIZE:-163840}
+      --ctx-size ${CTX_SIZE:-262144}
       -b ${BATCH_SIZE:-1024}
       -ub ${UBATCH_SIZE:-1024}
       -np ${NP:-1}
