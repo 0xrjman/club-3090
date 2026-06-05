@@ -1,0 +1,66 @@
+# ===========================================================================
+# Profile (at-a-glance):
+#   Model:     Qwen3.6-27B (Unsloth Q5_K_S GGUF target + Anbeeld DFlash drafter)
+#   Engine:    beellama.cpp (Anbeeld llama.cpp fork — DFlash spec-dec + windowed KV)
+#   Topology:  Single 5090 (TP=1, sm_120)
+#   Drafter:   DFlash (--spec-type dflash, Anbeeld DFlash-IQ4_XS GGUF)
+#   KV:        q5_0 K + q4_1 V
+#   Vision:    ✅ yes (mmproj-F16 mounted)
+#   Template:  native (GGUF-embedded) via --jinja
+#   Max ctx:   262144
+#   Status:    ⚠️ Version of beellama/dflash with vision support
+# ---------------------------------------------------------------------------
+# Qwen3.6-27B on beellama.cpp — single 5090, Q5_K_S + DFlash (Anbeeld IQ4_XS draft),
+# q5_0/q4_1 KV, with mmproj-F16 vision encoder.
+#
+# Override defaults via .env or shell:
+#   MODEL_DIR              host dir to mount as /models  (default: ../../../../../../models-cache)
+#   GGUF_FILE             target GGUF under /models
+#   DRAFT_FILE            DFlash draft GGUF under /models
+#   MMPROJ_FILE           mmproj GGUF for vision        (default: qwen3.6-27b-gguf/mmproj-F16.gguf)
+#   CTX_SIZE              KV pool size                  (default: 262144)
+#   PORT                  host port                     (default: 8020)
+#   REASONING             thinking gate                 (default: off)
+services:
+  beellama-qwen36-27b-vision:
+    image: ${BEELLAMA_IMAGE:-ghcr.io/anbeeld/beellama.cpp:server-cuda13-v0.3.1}
+    container_name: "${ESTATE_CONTAINER:-beellama-qwen36-27b-vision}"
+    restart: unless-stopped
+    ports:
+      - "${ESTATE_PORT:-${PORT:-8020}}:8080"
+    volumes:
+      - "${MODEL_DIR:-../../../../../../models-cache}:/models:ro"
+    command: >-
+      --host 0.0.0.0
+      --port 8080
+      --alias ${MODEL_ALIAS:-qwen3.6}
+      -m /models/${GGUF_FILE:-qwen3.6-27b-gguf/unsloth-q5ks/Qwen3.6-27B-Q5_K_S.gguf}
+      --spec-draft-model /models/${DRAFT_FILE:-qwen3.6-27b-gguf/anbeeld-dflash-iq4xs/Qwen3.6-27B-DFlash-IQ4_XS.gguf}
+      --spec-type dflash
+      --spec-dflash-cross-ctx ${CROSS_CTX:-1024}
+      -ngl all
+      --spec-draft-ngl all
+      --ctx-size ${CTX_SIZE:-262144}
+      -b ${BATCH_SIZE:-2048}
+      -ub ${UBATCH_SIZE:-512}
+      -np ${NP:-1}
+      --kv-unified
+      --cache-type-k ${KV_TYPE_K:-q5_0}
+      --cache-type-v ${KV_TYPE_V:-q4_1}
+      --flash-attn on
+      --cache-ram 0
+      --no-host
+      --jinja
+      --mmproj /models/${MMPROJ_FILE:-qwen3.6-27b-gguf/mmproj-F16.gguf}
+      --reasoning ${REASONING:-off}
+      --temp ${TEMP:-${TEMPERATURE:-1.0}}
+      --top-k ${TOP_K:-64}
+      --top-p ${TOP_P:-0.95}
+      --min-p ${MIN_P:-0.0}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${ESTATE_GPUS:-${CUDA_VISIBLE_DEVICES:-0}}"]
+              capabilities: [gpu]

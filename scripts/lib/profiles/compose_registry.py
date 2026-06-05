@@ -410,7 +410,17 @@ COMPOSE_REGISTRY = {
         default_port=8020,
         kvcalc_key="SKIP",
         status="caveats",
-        status_note="Single-GPU default. Launchers inject Anbeeld's official beellama.cpp server-cuda-v0.3.0 image (sm_86/89 = 3090/4090); sm_89 compiled-not-validated on club-3090's 3090-only rig. 5090/sm_120: prefix BEELLAMA_IMAGE=ghcr.io/noonghunna/beellama-cpp:multiarch-v0.3.0-efe856397 (sm_120 compiled-not-validated). Usable ctx ceiling 160K (200K OOMs on prefill); ships 102K. DFlash prose is net-positive on tok/s (+27% vs no-spec, re-tested 2026-06-03); the earlier 'prose-DFlash regression' is RETRACTED — it was an AR over-read + wrong baseline (docs/UPSTREAM.md).",
+        status_note="SM120 single-card default. 262K ctx, port 8020, --alias qwen3.6. ~149 t/s short / ~67 t/s long at 262K.",
+    ),
+    "beellama/dflash-vision": _entry(
+        model="qwen3.6-27b", weights_variant="beellama-q5ks-dflash", workload="vision-coding",
+        engine="beellama-local", drafter="anbeeld-qwen-dflash", kv_format="q5_0",
+        tp=1, max_ctx=262144, max_num_seqs=1, mem_util=None,
+        compose_path="models/qwen3.6-27b/beellama/compose/single/beellama-q5ks-dflash/dflash-vision.yml",
+        default_port=8020,
+        kvcalc_key="SKIP",
+        status="experimental",
+        status_note="beellama/dflash + mmproj-F16 vision encoder. 5090 single-card.",
     ),
 
     # Qwen3.6-27B PRISM-PRO-DQ (Ex0bit dynamic-quant GGUF) — community-experimental, ik-llama.
