@@ -35,6 +35,25 @@ No `compose_registry.py` entry, no profile YAML, no calibration. You give up `la
 
 This doc covers the **new base model** case. The others are addressed in the v0.7.0 profile model design.
 
+## Coherence rules when engines, composes, or patches change
+
+This stack keeps two layers separate on purpose:
+
+| Layer | What it owns | What it must not silently imply |
+|---|---|---|
+| Compose | The actual runtime wiring: image fallback, mounts, entrypoint, env vars, ports, and patch application | It does not define engine compatibility on its own |
+| EngineProfile | The compatibility / provenance record for a specific image pin | It does not perform the compose mount itself |
+| Patch metadata | Which fixes or overlays are associated with an engine / compose path | It is not safe to assume every patch field is inert documentation |
+
+Use these rules when you touch anything that changes version, branch, overlay set, or deprecation state:
+
+1. **Compose is authoritative for runtime behavior.** If a patch is load-bearing for a specific boot, wire it on that compose path explicitly. Do not assume an engine profile entry will mount it for you.
+2. **EngineProfile is authoritative for image pin compatibility and provenance.** If the engine image changes, revalidate every compose that points at it against that exact pin. Update `supported_model_families`, `supported_kv_formats`, `features`, `vendored_overlays`, and `feature_provenance` only when they still describe that exact pinned image.
+3. **Patch metadata can be load-bearing.** Some consumers read engine-level overlay metadata as an active constraint, not just documentation. Before sharing an engine across models, confirm the shared engine can remain overlay-free if any consumer expects it, or split the engines.
+4. **A new model should not mutate engine semantics unless the model forces it.** Add the compose and registry rows first. Only change engine YAML when the image pin itself genuinely needs new compatibility/provenance declarations.
+5. **When bumping an engine pin, review the whole chain.** For every compose on that engine, check the new image, the compose file, the patch wiring, `patches.yml`, `arch_patches.yml`, defaults, and the live tests. If a patch can no longer be shared cleanly across families, keep the engine split rather than forcing a union.
+6. **When deprecating an engine or compose, update the whole surface.** Registry status, compose header, defaults / suggestions, docs, and tests all need to agree. Never leave a dead path behind a live default.
+
 ## Workflow at a glance
 
 ```
