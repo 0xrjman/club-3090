@@ -409,8 +409,8 @@ COMPOSE_REGISTRY = {
         compose_path="models/qwen3.6-27b/beellama/compose/single/beellama-q5ks-dflash/dflash.yml",
         default_port=8020,
         kvcalc_key="SKIP",
-        status="caveats",
-        status_note="SM120 single-card default. 262K ctx, port 8020, --alias qwen3.6. ~149 t/s short / ~67 t/s long at 262K.",
+        status="experimental",
+        status_note="5090 single-card. 262K ctx, port 8020, --alias qwen3.6. ~149 t/s short / ~67 t/s long at 262K.",
     ),
     "beellama/dflash-vision": _entry(
         model="qwen3.6-27b", weights_variant="beellama-q5ks-dflash", workload="vision-coding",
@@ -670,8 +670,8 @@ COMPOSE_REGISTRY = {
         compose_path="models/gemma-4-31b/beellama/compose/single/beellama-q4ks-dflash/dflash.yml",
         default_port=8020,
         kvcalc_key="SKIP",
-        status="caveats",
-        status_note="Single-GPU default — the only viable fast single-card Gemma-4 path on Ampere. Launchers inject Anbeeld's official beellama.cpp server-cuda-v0.3.0 image (sm_86/89 = 3090/4090); sm_89 compiled-not-validated on club-3090's 3090-only rig. 5090/sm_120: prefix BEELLAMA_IMAGE=ghcr.io/noonghunna/beellama-cpp:multiarch-v0.3.0-efe856397 (sm_120 compiled-not-validated). DFlash prose is net-positive on tok/s (+28–31% vs no-spec, re-tested 2026-06-03; earlier 'prose regression' RETRACTED — AR over-read + wrong baseline); re-point to mainline llama.cpp#23398 Gemma-4 MTP when it merges — docs/UPSTREAM.md.",
+        status="experimental",
+        status_note="5090 single-card. 262K ctx, port 8020, --alias qwen3.6.",
     ),
     "beellama/gemma-dflash-vision": _entry(
         model="gemma-4-31b", weights_variant="beellama-q4ks-dflash", workload="vision-coding",
