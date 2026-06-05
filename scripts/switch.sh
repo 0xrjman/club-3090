@@ -7,6 +7,7 @@
 # Stateless — re-run any time you want a different config.
 #
 # Usage:
+#   bash scripts/switch.sh                      # quick-launch menu (your configured options)
 #   bash scripts/switch.sh <variant>            # switch + tail until ready
 #   bash scripts/switch.sh <variant> --no-wait  # switch and return immediately
 #   bash scripts/switch.sh --force <variant>    # skip hardware/free-VRAM preflight
@@ -762,6 +763,91 @@ wait_ready() {
   echo "[switch] ✓ ready (${elapsed}s)"
 }
 
+# Quick-launch menu: show user-configured variants, accept number or slug.
+# Reads CLUB3090_QUICK_LAUNCH from .env (comma-separated slugs). Falls back to
+# curated defaults for the detected topology if not set.
+# Env: CLUB3090_QUICK_LAUNCH="beellama/dflash,beellama/dflash-vision,beellama/q5ks-mtp,beellama/gemma-dflash,beellama/gemma-dflash-vision"
+quick_launch_menu() {
+  local topology
+  topology="$(switch_topology_from_gpus)"
+
+  # Resolve the variant list: user config → curated defaults
+  local -a variants=()
+  if [[ -n "${CLUB3090_QUICK_LAUNCH:-}" ]]; then
+    IFS=',' read -ra variants <<< "${CLUB3090_QUICK_LAUNCH}"
+  else
+    # Curated: walk each model's default for detected topology
+    local models
+    models="$(python3 -c "import sys; sys.path.insert(0,'$ROOT_DIR'); from scripts.lib.profiles.compose_registry import model_set; print('\n'.join(sorted(model_set())))")"
+    while IFS= read -r model; do
+      [[ -n "$model" ]] || continue
+      local resolved
+      if resolved="$(model_default_target "$ROOT_DIR" "$model" "$topology" 2>/dev/null)"; then
+        [[ -n "$resolved" ]] && variants+=("$resolved")
+      fi
+    done <<< "$models"
+  fi
+
+  # Filter to functional + topology-matching; resolve /default tokens
+  local -a menu=()
+  local v
+  for v in "${variants[@]}"; do
+    v="${v// /}"  # trim spaces
+    [[ -n "$v" ]] || continue
+    # Resolve /default tokens
+    v="$(resolve_default_variant "$v" 2>/dev/null || true)"
+    [[ -n "$v" ]] || continue
+    # Must be known
+    [[ -n "${VARIANTS[$v]:-}" ]] || continue
+    menu+=("$v")
+  done
+
+  if [[ ${#menu[@]} -eq 0 ]]; then
+    echo "[switch] No configured quick-launch variants." >&2
+    echo "[switch] Set CLUB3090_QUICK_LAUNCH in .env (comma-separated slugs)." >&2
+    echo "[switch] Or run: bash scripts/switch.sh --list" >&2
+    exit 1
+  fi
+
+  echo "Quick launch — ${topology} GPU ($(python3 -c "import sys; sys.path.insert(0,'$ROOT_DIR'); from scripts.lib.profiles.compose_registry import model_set; print(len(model_set()))") models):"
+  echo ""
+
+  local i=1
+  for v in "${menu[@]}"; do
+    IFS='|' read -r eng dir file <<< "${VARIANTS[$v]}"
+    IFS=/ read -ra fseg <<< "$file"
+    local topo="${fseg[0]:-?}" quant="${fseg[1]:-?}" serving="${fseg[2]:-?}"
+    local marker="$(status_marker "${VARIANT_STATUS[$v]:-production}")"
+    local ctx="${VARIANT_CTX[$v]:-}"
+    local model
+    model="$(python3 -c "import sys; sys.path.insert(0,'$ROOT_DIR'); from scripts.lib.profiles.compose_registry import COMPOSE_REGISTRY; print(COMPOSE_REGISTRY.get('$v',{}).get('model','?'))" 2>/dev/null || echo "?")"
+    printf '  [%d] %-34s  %-14s %s/%s  %s %s\n' "$i" "$v" "$model" "$quant" "$serving" "$marker" "$ctx"
+    i=$((i + 1))
+  done
+
+  echo ""
+  echo -n "Select (number or slug, q to quit): "
+  local choice
+  read -r choice
+  choice="${choice// /}"
+  [[ -z "$choice" ]] && exit 0
+  if [[ "$choice" == "q" || "$choice" == "Q" ]]; then
+    exit 0
+  fi
+  # Number → slug
+  if [[ "$choice" =~ ^[0-9]+$ ]]; then
+    local idx=$((choice - 1))
+    if [[ $idx -ge 0 && $idx -lt ${#menu[@]} ]]; then
+      VARIANT="${menu[$idx]}"
+    else
+      echo "ERROR: invalid number '$choice'." >&2
+      exit 1
+    fi
+  else
+    VARIANT="$choice"
+  fi
+}
+
 # --- arg parsing ---
 WAIT=1
 FORCE="${FORCE:-0}"
@@ -811,7 +897,11 @@ if [[ "$LIST_ALL" -eq 1 ]]; then
   exit 1
 fi
 
-[[ -n "$VARIANT" ]] || usage
+# No variant → show quick-launch menu (user-configured options)
+if [[ -z "$VARIANT" ]]; then
+  quick_launch_menu
+  [[ -z "$VARIANT" ]] && exit 0  # user pressed q/empty
+fi
 VARIANT="$(resolve_default_variant "$VARIANT")"
 
 resolve_ready_url "${VARIANT}"
