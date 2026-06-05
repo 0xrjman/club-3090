@@ -35,9 +35,15 @@ weights:
     size_gb: 20.0
     format: autoround
     status: production
-    hf_repo: Qwen/Qwen3-MoE-A3B-Instruct-AutoRound-Int4-mixed
+    # Repo provenance (#316, 2026-06-05): originally downloaded + benched 2026-04-20 as
+    # Intel/Qwen3.6-35B-A3B-int4-AutoRound (commit 3d5a2ed, 170.5 TPS TP=2). Intel renamed
+    # it -> -int4-mixed-AutoRound and re-quantized on 2026-05-01 (old name 404s now; current
+    # main HEAD 65f69c7 ships different bytes). The value previously here
+    # (Qwen/Qwen3-MoE-A3B-Instruct-AutoRound-Int4-mixed) never existed on HF — that was the bug.
+    # Re-validation of HEAD 65f69c7 tracked in BENCHMARKS.md "Qwen 3.6 35B-A3B" row.
+    hf_repo: Intel/Qwen3.6-35B-A3B-int4-mixed-AutoRound
     hf_repos:
-      - Qwen/Qwen3-MoE-A3B-Instruct-AutoRound-Int4-mixed
+      - Intel/Qwen3.6-35B-A3B-int4-mixed-AutoRound
     engine: vllm
     kind: main
     verify_glob: "*.safetensors"

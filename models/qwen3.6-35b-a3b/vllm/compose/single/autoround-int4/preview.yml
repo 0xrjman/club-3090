@@ -33,7 +33,7 @@
 #   "preview" naming → add a Cliff-2-mitigated dual.yml.
 #
 # Models:
-#   target: Qwen/Qwen3-MoE-A3B-Instruct-AutoRound-Int4-mixed (path:
+#   target: Intel/Qwen3.6-35B-A3B-int4-mixed-AutoRound (path:
 #           qwen3.6-35b-a3b-autoround-int4, arch:
 #           Qwen3_5MoeForConditionalGeneration, ~20 GB on disk)
 #   draft : none on this compose
