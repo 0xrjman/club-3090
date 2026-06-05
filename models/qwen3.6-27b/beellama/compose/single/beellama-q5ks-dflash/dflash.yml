@@ -95,7 +95,7 @@ services:
     container_name: "${ESTATE_CONTAINER:-beellama-qwen36-27b}"
     restart: unless-stopped
     ports:
-      - "${ESTATE_PORT:-${PORT:-8060}}:8080"
+      - "${ESTATE_PORT:-${PORT:-8020}}:8080"
     volumes:
       - "${MODEL_DIR:-../../../../../../models-cache}:/models:ro"
     # server target ENTRYPOINT is /app/llama-server — args only below.
@@ -104,13 +104,14 @@ services:
     command: >-
       --host 0.0.0.0
       --port 8080
+      --alias ${MODEL_ALIAS:-qwen3.6}
       -m /models/${GGUF_FILE:-qwen3.6-27b-gguf/unsloth-q5ks/Qwen3.6-27B-Q5_K_S.gguf}
       --spec-draft-model /models/${DRAFT_FILE:-qwen3.6-27b-gguf/anbeeld-dflash-iq4xs/Qwen3.6-27B-DFlash-IQ4_XS.gguf}
       --spec-type dflash
       --spec-dflash-cross-ctx ${CROSS_CTX:-1024}
       -ngl all
       --spec-draft-ngl all
-      --ctx-size ${CTX_SIZE:-102400}
+      --ctx-size ${CTX_SIZE:-262144}
       -b ${BATCH_SIZE:-2048}
       -ub ${UBATCH_SIZE:-512}
       -np ${NP:-1}
