@@ -52,7 +52,7 @@ services:
       --no-host
       --jinja
       --mmproj /models/${MMPROJ_FILE:-qwen3.6-27b-gguf/mmproj-F16.gguf}
-      --reasoning ${REASONING:-off}
+      --reasoning ${REASONING:-on}
       --temp ${TEMP:-${TEMPERATURE:-1.0}}
       --top-k ${TOP_K:-64}
       --top-p ${TOP_P:-0.95}
