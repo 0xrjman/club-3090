@@ -190,9 +190,11 @@ _preflight_hardware_suggestions() {
   echo "[preflight] Suggested next steps:" >&2
   echo "[preflight]   - Pick a compose that matches the detected GPU VRAM/topology." >&2
   if [[ "$variant" == vllm/gemma-mtp-tp1 ]]; then
-    echo "[preflight]   - On 2x 24 GB cards, use:  bash scripts/switch.sh vllm/gemma-mtp" >&2
+    echo "[preflight]   - vllm/gemma-mtp-tp1 is DEPRECATED (no fp8 KV path for Gemma 4 on Ampere sm_86)." >&2
+    echo "[preflight]   - Single 24 GB card, use:  bash scripts/switch.sh beellama/gemma-dflash" >&2
+    echo "[preflight]   - On 2x 24 GB cards, use:  bash scripts/switch.sh vllm/gemma-bf16-mtp" >&2
   fi
-  echo "[preflight]   - On a single 24 GB card, start with:  bash scripts/switch.sh vllm/default" >&2
+  echo "[preflight]   - On a single 24 GB card, start with:  bash scripts/switch.sh beellama/dflash  (single-card default)" >&2
   echo "[preflight]   - For maximum compatibility, use:  bash scripts/switch.sh llamacpp/default" >&2
   echo "[preflight]   - Explicit bypass:  bash scripts/switch.sh --force ${variant:-<variant>}" >&2
 }
@@ -633,6 +635,10 @@ _preflight_compose_path_default() {
   value="$(printf '%s' "$value" | sed -E 's#\$\{MODEL_DIR[^}]*\}/?##g')"
   value="${value#/models/}"
   value="${value#/root/.cache/huggingface/}"
+  # Strip a trailing `}` left when a path is the DEFAULT inside an outer
+  # ${VAR:-/root/.cache/huggingface/<path>} — the path grep anchors mid-expansion
+  # so it captures `<path>}`. A real model subdir never ends in `}`.
+  value="${value%\}}"
   printf '%s' "$value"
 }
 
@@ -839,19 +845,34 @@ preflight_compose_deps() {
   # ${MODEL_DIR}:/root/.cache/huggingface and pass
   # `/root/.cache/huggingface/<subdir>`.
   local is_llamacpp=0
-  if grep -qhE 'image:.*(ggml-org/llama\.cpp|ikawrakow/ik-llama)' "${compose_files[@]}"; then
+  # beellama.cpp (ghcr.io/{anbeeld/beellama.cpp,noonghunna/beellama-cpp}) is a
+  # llama.cpp-family server: it mounts ${MODEL_DIR}:/models and passes
+  # `-m /models/<path>` (+ `--spec-draft-model /models/<path>` for DFlash/MTP),
+  # so it belongs on the GGUF presence path, NOT the vLLM HF-cache path.
+  if grep -qhE 'image:.*(ggml-org/llama\.cpp|ikawrakow/ik-llama|beellama)' "${compose_files[@]}"; then
     is_llamacpp=1
   fi
 
   if [[ $is_llamacpp -eq 1 ]]; then
     local gguf_paths=()
+    local draft_paths=()
     local mmproj_paths=()
     local token path
 
+    # Target weights: -m / --model
     while IFS= read -r token; do
       path="$(_preflight_compose_path_default "$token")"
       [[ -n "$path" ]] && gguf_paths+=("$path")
     done < <(grep -hoE -- '(^|[[:space:]])(-m|--model)[[:space:]]+/models/[^[:space:]]+' "${compose_files[@]}" \
+      | awk '{print $NF}' || true)
+
+    # Speculative drafter: beellama --spec-draft-model, llama.cpp -md/--model-draft.
+    # A missing drafter GGUF otherwise surfaces only as a cryptic in-container
+    # "failed to open GGUF file" crash (see #288 beellama onboarding reports).
+    while IFS= read -r token; do
+      path="$(_preflight_compose_path_default "$token")"
+      [[ -n "$path" ]] && draft_paths+=("$path")
+    done < <(grep -hoE -- '(^|[[:space:]])(--spec-draft-model|--model-draft|-md)[[:space:]]+/models/[^[:space:]]+' "${compose_files[@]}" \
       | awk '{print $NF}' || true)
 
     while IFS= read -r token; do
@@ -860,8 +881,13 @@ preflight_compose_deps() {
     done < <(grep -hoE -- '(^|[[:space:]])--mmproj[[:space:]]+/models/[^[:space:]]+' "${compose_files[@]}" \
       | awk '{print $NF}' || true)
 
+    # Env overrides mirror the compose knobs (GGUF_FILE / DRAFT_FILE / MMPROJ_FILE),
+    # each replacing only its own path class.
     if [[ -n "${GGUF_FILE:-}" ]]; then
       gguf_paths=("$GGUF_FILE")
+    fi
+    if [[ -n "${DRAFT_FILE:-}" && ${#draft_paths[@]} -gt 0 ]]; then
+      draft_paths=("$DRAFT_FILE")
     fi
     if [[ -n "${MMPROJ_FILE:-}" && ${#mmproj_paths[@]} -gt 0 ]]; then
       mmproj_paths=("$MMPROJ_FILE")
@@ -870,6 +896,11 @@ preflight_compose_deps() {
     for path in "${gguf_paths[@]}"; do
       if [[ ! -f "${model_dir}/${path}" ]]; then
         missing+=("${model_dir}/${path} (llama.cpp GGUF weights)")
+      fi
+    done
+    for path in "${draft_paths[@]}"; do
+      if [[ ! -f "${model_dir}/${path}" ]]; then
+        missing+=("${model_dir}/${path} (speculative drafter GGUF)")
       fi
     done
     for path in "${mmproj_paths[@]}"; do
@@ -892,7 +923,13 @@ preflight_compose_deps() {
           missing+=("${model_dir}/${subdir}/config.json (HF model)")
         fi
       fi
-    done < <(grep -hoE '/root/\.cache/huggingface/[^"'\''[:space:],}:]+' "${compose_files[@]}" || true)
+    # Char-class must NOT exclude `:` or `}` — model paths can be
+    # `/root/.cache/huggingface/${MODEL_SUBDIR:-default}` (vLLM) and excluding
+    # those truncated the token to `${MODEL_SUBDIR` before _preflight_compose_path_default
+    # could resolve the `:-default`, causing a false "missing" (the gemma-4-12b
+    # MODEL_SUBDIR/SPEC_MODEL_SUBDIR composes). Stop only at real delimiters
+    # (quote / whitespace / comma); the `${VAR:-default}` resolver runs downstream.
+    done < <(grep -hv '^[[:space:]]*#' "${compose_files[@]}" 2>/dev/null | grep -oE '/root/\.cache/huggingface/[^"'\''[:space:],]+' || true)
 
     # Experimental SGLang composes mount individual MODEL_DIR subdirectories to
     # /models/target and /models/drafter instead of using the HF cache mount.
@@ -1011,22 +1048,31 @@ preflight_autodetect_endpoint() {
     return 0   # both already set — caller knows what they're doing
   fi
 
-  # Scan for one of our containers + its `0.0.0.0:<host>->8000/tcp` mapping.
-  # Recognises the canonical club-3090 prefixes (vllm-qwen36-27b,
-  # llama-cpp-qwen36-27b, ik-llama-qwen36-27b, vllm-gemma-4-31b) plus the sglang experimental tree.
-  # Users running endpoint-first via `--url` to rebench-full.sh bypass this
-  # entirely (PREFLIGHT_NO_AUTODETECT=1 set there).
+  # Detect a running inference container by its ENGINE-INTERNAL port mapping
+  # (vLLM 8000 / llama.cpp 8080 / sglang 30000), NOT a hardcoded model-name
+  # allowlist — so any compose is found regardless of model: gemma-4-12b,
+  # qwen-35b-a3b, beellama, a BYO container, etc. (#310: the old allowlist only
+  # knew qwen36-27b / gemma-4-31b, so everything else silently fell back to 8020).
+  # Among matches, prefer a recognised club-3090 engine-family prefix; otherwise
+  # take the first. Users running endpoint-first via `--url` bypass this entirely
+  # (PREFLIGHT_NO_AUTODETECT=1 set there).
   #
-  # The `|| true` is load-bearing: grep -E returns 1 when no container
-  # matches, which under `set -euo pipefail` in the caller silently aborts
-  # rebench-full.sh before it reaches its own "endpoint not responding"
-  # error path. Empty `found_line` is what we want for the no-container case.
-  local found_line
-  found_line=$(docker ps --format '{{.Names}}|{{.Ports}}' 2>/dev/null \
-    | grep -E '^(vllm-qwen36-27b|llama-cpp-qwen36-27b|ik-llama-qwen36-27b|vllm-gemma-4-31b|sglang-qwen36-27b)' \
-    | head -1 || true)
-  if [[ -z "$found_line" ]]; then
-    return 0   # nothing running; defaults stand
+  # The `|| true` is load-bearing: grep -E returns 1 when nothing matches, which
+  # under `set -euo pipefail` in the caller would silently abort rebench-full.sh
+  # before its own "endpoint not responding" path. Empty = the no-container case.
+  local engine_lines found_line
+  engine_lines=$(docker ps --format '{{.Names}}|{{.Ports}}' 2>/dev/null \
+    | grep -E '([0-9]{1,3}\.){3}[0-9]{1,3}:[0-9]+->(8000|8080|30000)/tcp' || true)
+  if [[ -z "$engine_lines" ]]; then
+    return 0   # nothing serving on an engine port; defaults stand
+  fi
+  # Prefer a recognised club-3090 engine-family prefix when several match.
+  found_line=$(printf '%s\n' "$engine_lines" \
+    | grep -E '^(vllm-|llama-cpp-|ik-llama-|sglang-|beellama-)' | head -1 || true)
+  [[ -z "$found_line" ]] && found_line=$(printf '%s\n' "$engine_lines" | head -1)
+  # Several inference containers up → we picked one; tell the user how to override.
+  if [[ "$(printf '%s\n' "$engine_lines" | grep -c .)" -gt 1 ]]; then
+    echo "[autodetect] multiple inference containers running; picked '${found_line%%|*}' — set CONTAINER=/URL= to override" >&2
   fi
 
   local detected_name detected_port

@@ -26,7 +26,7 @@ def check(cond, msg):
         failures.append(msg)
 
 check(len(COMPOSE_REGISTRY) == 56, f"registry has 56 entries (got {len(COMPOSE_REGISTRY)})")
-check(len(disk_paths) == 56, f"disk has 56 compose files (got {len(disk_paths)})")
+check(len(disk_paths) == 57, f"disk has 57 compose files (got {len(disk_paths)})")
 check(registry_paths <= disk_paths, "all registry compose_path values exist on disk")
 parked_disk_only = disk_paths - registry_paths
 check(

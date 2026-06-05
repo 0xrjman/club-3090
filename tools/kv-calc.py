@@ -93,6 +93,7 @@ def _weight_size(model, variant):
 def _load_model_specs_from_yaml(profiles):
     qwen, gemma = profiles.models["qwen3.6-27b"], profiles.models["gemma-4-31b"]
     qwen_moe, gemma_moe = profiles.models["qwen3.6-35b-a3b"], profiles.models["gemma-4-26b-a4b"]
+    gemma12 = profiles.models["gemma-4-12b"]
     q_fields = ("hidden_size", "num_hidden_layers", "num_gdn_layers", "num_attn_layers", "num_attn_heads", "num_kv_heads", "head_dim_attn", "linear_num_v_heads", "linear_num_k_heads", "linear_v_head_dim", "linear_k_head_dim", "linear_conv_kernel_dim", "max_ctx_supported", "attention_k_eq_v")
     g_fields = ("hidden_size", "intermediate_size", "num_hidden_layers", "num_full_attn_layers", "num_sliding_attn_layers", "num_attn_heads", "num_kv_heads", "head_dim_sliding", "global_head_dim", "sliding_window", "max_ctx_supported", "attention_k_eq_v")
     gm_fields = (*g_fields, "num_global_kv_heads", "num_experts", "num_experts_per_tok", "moe_intermediate_size", "active_params_b", "mtp_num_hidden_layers")
@@ -101,11 +102,29 @@ def _load_model_specs_from_yaml(profiles):
     qmspec = {"model_id": qwen_moe.id, "model_family": qwen_moe.family, **{k: getattr(qwen_moe, k) for k in qm_fields}, "valid_tp": list(qwen_moe.valid_tp), "weights_total_gb": _weight_size(qwen_moe, qwen_moe.default_weight_variant), "weights_gptq_gb": _weight_size(qwen_moe, "gptq_int4"), "mamba_state_bytes": 4, "chunk_size": 256, "mtp_n_default": profiles.drafters["qwen-mtp-builtin"].n_default}
     gspec = {"model_id": gemma.id, "model_family": gemma.family, **{k: getattr(gemma, k) for k in g_fields}, "valid_tp": list(gemma.valid_tp), "weights_int4_gb": _weight_size(gemma, "autoround-int4"), "weights_awq_gb": _weight_size(gemma, "awq"), "weights_bf16_gb": _weight_size(gemma, "bf16"), "drafter_mtp_gb": float(profiles.drafters["gemma-it-assistant"].vram_footprint_gb), "drafter_dflash_gb": float(profiles.drafters["gemma-dflash"].vram_footprint_gb), "mtp_n_default": profiles.drafters["gemma-it-assistant"].n_default}
     gmspec = {"model_id": gemma_moe.id, "model_family": gemma_moe.family, **{k: getattr(gemma_moe, k) for k in gm_fields}, "valid_tp": list(gemma_moe.valid_tp), "weights_int4_gb": _weight_size(gemma_moe, "autoround-int4-mixed"), "weights_awq_gb": _weight_size(gemma_moe, "awq"), "drafter_mtp_gb": float(profiles.drafters["gemma-26b-it-assistant"].vram_footprint_gb), "mtp_n_default": profiles.drafters["gemma-26b-it-assistant"].n_default}
+    # Gemma-4-12B (gemma4_unified arch). Its TEXT backbone is gemma4-swa-dense
+    # shaped (same SWA KV math family as gemma-4-31b), so it rides the SAME
+    # "gemma4-swa-dense" prediction path — we set model_family to that internal
+    # KV-family tag (NOT its ModelProfile family "gemma4-unified", which is the
+    # vLLM arch name). It ships bf16 weights + an Intel AutoRound INT8 variant
+    # (~13 GB, W8A16) + a small assistant drafter; there is no int4/awq variant,
+    # so weights_int4_gb/weights_awq_gb point at the bf16 blob (23.9 GB) to keep
+    # _weights_per_card_gb()'s branch from KeyError'ing, while weights_int8_gb
+    # carries the real INT8 footprint (vllm/gemma-12b-single-int8-mtp path).
+    # Activation/overhead constants stay the SHARED Gemma dense constants (NOT
+    # re-tuned). The ONE measured calibration is the growing KV per-token —
+    # `measured_kv_growing_bpt_tp1` (see kv_pool_per_card_bytes): gemma4_unified's
+    # global-layer KV measured 1.44x LOWER than the 31B-derived global-only
+    # formula predicts, so we ride the measurement for the 12B only.
+    g12_bf16 = _weight_size(gemma12, "bf16")
+    g12_int8 = _weight_size(gemma12, "autoround-int8")
+    g12spec = {"model_id": gemma12.id, "model_family": "gemma4-swa-dense", **{k: getattr(gemma12, k) for k in g_fields}, "valid_tp": list(gemma12.valid_tp), "weights_int4_gb": g12_bf16, "weights_awq_gb": g12_bf16, "weights_bf16_gb": g12_bf16, "weights_int8_gb": g12_int8, "drafter_mtp_gb": float(profiles.drafters["gemma-12b-it-assistant"].vram_footprint_gb), "measured_kv_growing_bpt_tp1": 45632, "mtp_n_default": profiles.drafters["gemma-12b-it-assistant"].n_default}
     return {
         "qwen3.6-27b": qspec,
         "qwen3.6-35b-a3b": qmspec,
         "gemma-4-31b": gspec,
         "gemma-4-26b-a4b": gmspec,
+        "gemma-4-12b": g12spec,
     }
 
 
@@ -114,6 +133,7 @@ QWEN36_27B = MODEL_SPECS["qwen3.6-27b"]
 QWEN36_35B_A3B = MODEL_SPECS["qwen3.6-35b-a3b"]
 GEMMA4_31B = MODEL_SPECS["gemma-4-31b"]
 GEMMA4_26B_A4B = MODEL_SPECS["gemma-4-26b-a4b"]
+GEMMA4_12B = MODEL_SPECS["gemma-4-12b"]
 
 
 # =============================================================================
@@ -168,9 +188,12 @@ QWEN_GDN_ACTIVATION_COEF = {
 # ---- Qwen MoE activation + built-in MTP workspace ----
 # Path-B low-anchor fit from the two v0.7.3 preview rows. The per-token GDN
 # coefficient follows the dense-Qwen shape; the small constant captures MoE
-# expert dispatch/router buffers. Current vLLM TP preview effectively keeps
-# the quantized MoE weights resident per card, so weights are not divided by TP
-# for qwen3-next-moe in _weights_per_card_gb().
+# expert dispatch/router buffers. NOTE: vLLM shards both attention and MoE
+# expert weights across TP ranks, so weights ARE divided by TP for
+# qwen3-next-moe in _weights_per_card_gb() (fixed in #260). The ≈budget peak
+# on the live rows is the elastic KV pool filling spare VRAM, not resident
+# full-quant weights — the old no-/tp assumption over-predicted long-ctx
+# configs (e.g. 262K) into a false FAIL.
 QWEN_MOE_ACTIVATION_COEF = {
     "fp16":               110,
     "bf16":               110,
@@ -225,8 +248,13 @@ GENERIC_DENSE_ACTIVATION_FLOOR_GB = 1.5         # ≥ Gemma dense constant activ
 # =============================================================================
 COMPOSE_ALIAS_TEXT = {
     "qwen3.6-27b": "minimal=vllm/minimal long-text=vllm/long-text long-text-no-mtp=vllm/long-text-no-mtp long-vision=vllm/long-vision bounded-thinking=vllm/bounded-thinking tools-text=vllm/tools-text dual=vllm/dual dual-turbo=vllm/dual-turbo dual-dflash=vllm/dual-dflash dual-dflash-noviz=vllm/dual-dflash-noviz dual-bf16=vllm/dual-bf16 dual-int8=vllm/dual-int8 dual-tq3-mtp=vllm/dual-tq3-mtp dual-tq3-mtp-genesis=vllm/dual-tq3-mtp-genesis dual-tq3-nomtp=vllm/dual-tq3-nomtp dual4=vllm/dual4 dual4-dflash=vllm/dual4-dflash",
-    "qwen3.6-35b-a3b": "qwen-a3b-preview-single=vllm/qwen-a3b-preview-single qwen-a3b-preview=vllm/qwen-a3b-preview qwen-a3b-preview-mtp=vllm/qwen-a3b-preview-mtp",
-    "gemma-4-31b": "gemma-dual=vllm/gemma-mtp gemma-dual-int8=vllm/gemma-int8 gemma-dual-int8-262k=vllm/gemma-int8-262k gemma-dual-bf16=vllm/gemma-bf16 gemma-dual-int8-tq3=vllm/gemma-int8-tq3 gemma-dual-dflash=vllm/gemma-dflash gemma-dual-dflash-int8=vllm/gemma-dflash-int8 gemma-dual-awq=vllm/gemma-awq gemma-single=vllm/gemma-mtp-tp1",
+    "qwen3.6-35b-a3b": "qwen-a3b-preview-single=vllm/qwen-a3b-preview-single qwen-35b-a3b-dual=vllm/qwen-35b-a3b-dual",
+    "gemma-4-31b": "gemma-dual=vllm/gemma-bf16-mtp gemma-dual-int8=vllm/gemma-int8-mtp gemma-single=vllm/gemma-mtp-tp1",
+    # gemma-4-12b legacy alias namespace is keyed by model id, so reusing the
+    # bare `gemma-dual` string here is harmless — compat + the CLI always pass
+    # an explicit --model, and the reverse map is keyed by (unique) registry
+    # slug. `gemma-dual` → the MTP dual; `gemma-no-mtp` → the no-drafter dual.
+    "gemma-4-12b": "gemma-dual=vllm/gemma-12b-dual-bf16-mtp gemma-single-int8-mtp=vllm/gemma-12b-single-int8-mtp",
     "gemma-4-26b-a4b": "gemma-a4b-single=vllm/gemma-a4b-single gemma-a4b=vllm/gemma-a4b gemma-a4b-awq=vllm/gemma-a4b-awq gemma-a4b-awq-mtp=vllm/gemma-a4b-awq-mtp",
 }
 COMPOSE_ALIASES = {model: tuple(part.split("=", 1) for part in text.split()) for model, text in COMPOSE_ALIAS_TEXT.items()}
@@ -256,10 +284,12 @@ def _compose_cfg_from_registry(profiles, model_id, legacy_name, registry_name):
         cfg.update({"mtp": False, "dflash_draft_gb": float(drafter.vram_footprint_gb)})
     if drafter is not None:
         cfg["mtp_n"] = int(drafter.n_default)
-    if model_id == "gemma-4-31b" and drafter is not None:
+    # gemma-4-12b rides the shared Gemma dense path (model_family
+    # gemma4-swa-dense in MODEL_SPECS); treat its drafter + weights the same way.
+    if model_id in ("gemma-4-31b", "gemma-4-12b") and drafter is not None:
         cfg["drafter_gb"] = float(drafter.vram_footprint_gb)
-    if model_id == "gemma-4-31b":
-        cfg["weights_variant"] = {"awq": "awq", "bf16": "bf16"}.get(entry["weights_variant"], "int4")
+    if model_id in ("gemma-4-31b", "gemma-4-12b"):
+        cfg["weights_variant"] = {"awq": "awq", "bf16": "bf16", "autoround-int8": "int8"}.get(entry["weights_variant"], "int4")
     if model_id == "gemma-4-26b-a4b":
         cfg["weights_variant"] = "awq" if entry["weights_variant"] == "awq" else "int4"
         if drafter is not None:
@@ -332,21 +362,33 @@ def _weights_per_card_gb(spec, tp, weights_variant="default"):
     if spec["model_family"] == "qwen3-next-hybrid":
         return spec["weights_total_gb"] / tp
     elif spec["model_family"] == "qwen3-next-moe":
-        # Current vLLM MoE preview keeps expert weights effectively resident
-        # per TP rank; live 16K rows calibrate to full quant weight per card.
+        # vLLM shards attention + MoE expert weights across TP ranks, so
+        # per-card weights are /tp (#260). The old no-/tp assumption was
+        # mis-inferred from the live ≈budget peak — but that peak is the
+        # elastic KV pool filling spare VRAM (vLLM allocates all available
+        # KV memory as blocks), not resident full-quant weights. Not dividing
+        # over-predicted the fixed footprint and turned long-ctx configs
+        # (e.g. 262K dual, which fits) into a false FAIL.
         if weights_variant == "gptq":
-            return spec["weights_gptq_gb"]
-        return spec["weights_total_gb"]
+            return spec["weights_gptq_gb"] / tp
+        return spec["weights_total_gb"] / tp
     elif spec["model_family"] == "gemma4-swa-dense":
         if weights_variant == "awq":
             return spec["weights_awq_gb"] / tp
         elif weights_variant == "bf16":
             return spec["weights_bf16_gb"] / tp
+        elif weights_variant == "int8":
+            return spec["weights_int8_gb"] / tp
         else:  # int4 default
             return spec["weights_int4_gb"] / tp
     elif spec["model_family"] == "gemma4-swa-moe":
-        # Same MoE-residency assumption as Qwen A3B; validated by the
-        # v0.7.3 AWQ rows where TP=2 still peaks near a full AWQ shard/card.
+        # NOT /tp'd (unlike qwen3-next-moe, fixed in #260) — deliberately left
+        # pending its own re-calibration. The v0.7.3 AWQ rows peak at 23.45–
+        # 23.50 GB/card (TP=2, ~0.95 GB above the 22.08 budget), so the current
+        # no-/tp footprint produces a *protective* TIGHT verdict there. Dividing
+        # by TP without a measured fixed-footprint anchor would relax that to
+        # PASS for a config that genuinely runs at 23.5/24. Re-do with a proper
+        # boot-log anchor (KV-pool tokens → fixed = peak − pool) before /tp'ing.
         if weights_variant == "int4":
             return spec["weights_int4_gb"]
         return spec["weights_awq_gb"]
@@ -371,11 +413,13 @@ def kv_pool_per_card_bytes(spec, kv_format, max_ctx, max_num_seqs, tp, mtp_n=0):
       K and V stored independently → ×2 factor.
 
     For Gemma 4 (SWA + dense MLP):
-      Only the 10 full_attention layers grow KV (at global_head_dim=512).
-      The 50 sliding_attention layers hold a FIXED window of 1024 tokens
-      (constant in ctx, contributes a separate small term).
-      K==V tying IS exploited by vLLM's allocator → ×1 factor (calibrated
-      against BENCHMARKS data; see docs/KV_MATH.md).
+      Only the full_attention layers grow KV (at global_head_dim); the count is
+      read from the spec, not hardcoded — 10/50 full/sliding on the 31B, 8/40 on
+      the 12B. The sliding_attention layers hold a FIXED window (constant in ctx,
+      separate small term). K==V tying IS exploited by vLLM's allocator → ×1
+      factor (calibrated against BENCHMARKS data; see docs/KV_MATH.md).
+      gemma4_unified (12B) overrides the growing per-token with a MEASURED
+      constant (`measured_kv_growing_bpt_tp1`) — see the branch below.
     """
     bpe = KV_FORMAT_BYTES[kv_format]
 
@@ -418,13 +462,28 @@ def kv_pool_per_card_bytes(spec, kv_format, max_ctx, max_num_seqs, tp, mtp_n=0):
 
     elif spec["model_family"] == "gemma4-swa-dense":
         # K==V tied → ×1 storage
-        per_token_growing = (
-            spec["num_full_attn_layers"]
-            * spec["num_kv_heads"]
-            * spec["global_head_dim"]
-            * 1  # K==V tied; vLLM stores once
-            * bpe
-        )
+        measured_bpt_tp1 = spec.get("measured_kv_growing_bpt_tp1")
+        if measured_bpt_tp1 is not None:
+            # gemma4_unified (gemma-4-12b) MEASURED calibration. The 31B-derived
+            # global-only formula (below) predicts 65,536 B/tok TP1 for the 12B
+            # (8 full x 8 kv x 512 global_head_dim x bpe2), but the LIVE
+            # gemma4_unified pool measured 22,816 B/tok/card = 45,632 TP1
+            # (8.16 GiB available KV / 384,019 tokens @ 131K / TP2 / mem-util
+            # 0.90, MTP, 2026-06-04) — 1.44x LOWER. Cause: gemma4_unified's
+            # unified-KV global layers + vLLM's hybrid-SWA pool accounting differ
+            # from the 31B's gemma4-swa-dense. bf16 baseline; scale by bpe for
+            # quantized KV. Single-anchor measured calibration; the precise arch
+            # decomposition is a TODO (needs vLLM kv_cache_utils source or >1
+            # anchor). Set ONLY on the 12B spec, so the 31B keeps the formula.
+            per_token_growing = measured_bpt_tp1 * (bpe / 2.0)
+        else:
+            per_token_growing = (
+                spec["num_full_attn_layers"]
+                * spec["num_kv_heads"]
+                * spec["global_head_dim"]
+                * 1  # K==V tied; vLLM stores once
+                * bpe
+            )
         # No MTP draft-token bump on Gemma — drafter is a separate model
         growing = (per_token_growing / tp) * max_ctx * max_num_seqs
 
@@ -827,6 +886,17 @@ def predict(
         notes.append("⚠ Gemma 4 31B TP=1 needs ≥32 GB VRAM; 24 GB Ampere boot-OOMs (model weights + drafter + min KV)")
     if spec["model_family"] in {"qwen3-next-moe", "gemma4-swa-moe"}:
         notes.append("MoE projection uses low-anchor calibration; add max_ctx/max_num_seqs A/B rows before treating this as production-grade.")
+    if (
+        spec["model_family"] == "qwen3-next-moe"
+        and kv_pool_requested_gb > 0
+        and available_for_kv > kv_pool_requested_gb * 1.5
+    ):
+        notes.append(
+            f"DeltaNet-hybrid KV is cheap — one max_ctx={max_ctx:,} seq needs only "
+            f"{kv_pool_requested_gb:.2f} GB, but vLLM fills the ~{available_for_kv:.1f} GB available pool "
+            f"to budget (≈{available_for_kv / kv_pool_requested_gb:.1f}× concurrency headroom). The sub-budget "
+            f"'predicted total' is the single-seq floor, not spare VRAM you can repurpose."
+        )
     if tp > 4:
         notes.append("TP > 4 predictions are extrapolated; report deltas via scripts/report.sh --bench")
 
@@ -1236,7 +1306,7 @@ def main():
                    help="Drafter model size in GB (MTP / DFlash). 0 if not using a drafter.")
     p.add_argument("--dflash-draft-gb", type=float, default=None,
                    help="(deprecated alias for --drafter-gb)")
-    p.add_argument("--weights-variant", choices=["default", "int4", "awq", "bf16"], default=None,
+    p.add_argument("--weights-variant", choices=["default", "int4", "awq", "bf16", "int8"], default=None,
                    help="Gemma 4 only: which weight quant variant. Default: from --compose, or int4.")
     p.add_argument("--calibration", action="store_true", help="Print predicted vs measured for all calibrated models.")
     p.add_argument("--solve-max-ctx", action="store_true", help="Binary-search for the largest max_ctx that fits.")

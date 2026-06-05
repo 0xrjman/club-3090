@@ -1,12 +1,14 @@
 # Adding a model to the club-3090 stack
 
-End-to-end workflow for onboarding a new model into the **curated profile catalog** + serving infrastructure. Pairs with [KV_MATH.md](KV_MATH.md) (math reference) and [ARCHITECTURE.md](ARCHITECTURE.md) (current stack state).
+End-to-end workflow for onboarding a new model into club-3090's **central registry** — `scripts/lib/profiles/compose_registry.py` (the single source of truth) plus the profile / engine / drafter / calibration YAMLs it points at. Registering a model here is what makes it a first-class catalog citizen: **`launch.sh` and `switch.sh` both resolve it by slug** (both are registry-derived — you never edit the launchers), the VRAM/KV projection (`kv-calc`) knows it, and the guard tests cover it. Pairs with [KV_MATH.md](KV_MATH.md) (math reference) and [ARCHITECTURE.md](ARCHITECTURE.md) (current stack state).
 
 > **Adding a model? Three paths — pick the lightest that fits:**
 >
 > 1. **Serve any safetensors repo locally (no catalog).** `scripts/pull.sh <org/Model> --profile-like vllm/minimal --dry-run` evaluates *any* safetensors HF repo against this stack's KV math (no download) and tells you whether it fits + at what confidence; drop `--dry-run` and add `--yes` to download + generate a minimal compose + boot. vLLM / safetensors only. See [PULL.md](PULL.md).
 > 2. **Run your own GGUF locally (no catalog).** `pull.sh` doesn't take GGUF — use the [local-GGUF recipe](#run-a-local-gguf-without-the-catalog) below (copy an existing compose, 3 steps, llama.cpp / ik-llama).
-> 3. **Promote a model into the curated catalog** — *this page*. The heavier task: validated composes, profile-compat coverage, calibration anchors, real benchmarks, per-model gotchas. The high-confidence backbone — **not** a prerequisite for serving.
+> 3. **Promote a model into the curated catalog — i.e. register it in the central `compose_registry.py`** — *this page*. The heavier task: validated composes, a registry entry per compose (the SoT that `launch.sh`/`switch.sh` derive from — this is what makes the model callable by slug), profile-compat coverage, calibration anchors, real benchmarks, per-model gotchas. The high-confidence backbone — **not** a prerequisite for serving.
+>
+> Paths 1–2 (serve + **tune** + **validate** your own model without the catalog) are walked end-to-end in [BRING_YOUR_OWN.md](BRING_YOUR_OWN.md) — start there if you're not yet cataloging. This page is the promotion step *after* you've validated a config there.
 
 ## Run a local GGUF without the catalog
 
@@ -103,7 +105,7 @@ Drop the file at `scripts/lib/profiles/models/<id>.yml`. Loaded automatically by
 
 ### Schema reference
 
-See `scripts/lib/profiles/compat.py → ModelProfile` for the live schema. Required fields (as of v0.7.0):
+See `scripts/lib/profiles/compat.py → ModelProfile` for the live schema. **The block below is ILLUSTRATIVE, not a universal required set — the architecture fields are FAMILY-SPECIFIC.** Don't copy it verbatim; copy the closest *current* profile and adapt: `gemma-4-12b.yml` / `gemma-4-31b.yml` (dense-SWA use `num_attn_heads`, `num_full_attn_layers`, `num_sliding_attn_layers`, `head_dim_sliding`, `global_head_dim`, `sliding_window` — NOT a flat `head_dim`/`attention_type`), `qwen3.6-27b.yml` (DeltaNet hybrid: `num_gdn_layers`, `linear_*`), `qwen3.6-35b-a3b.yml` (MoE). Family tags are the real ones (`gemma4-swa-dense`, `gemma4-unified`, `qwen3-next-hybrid`, `qwen3-next-moe`), not `gemma-4`/`qwen3-next`. Generic skeleton:
 
 ```yaml
 schema_version: 1
@@ -148,7 +150,7 @@ weights:
     status: production                     # production | experimental | community-experimental
     hf_repo: <Org/Repo>
     files: ["*.safetensors"]               # or explicit GGUF filenames
-    engine: vllm                           # vllm | ik-llama | llama-cpp
+    engine: vllm                           # vllm | ik-llama | llama-cpp | beellama (filesystem dir name)
     kind: main                             # main | draft | mmproj | gguf
     verify_glob: "*.safetensors"           # or "*.gguf"
   ubergarm-iq4ks:                          # second quant of the same model (own slug dir)
@@ -188,10 +190,28 @@ Fix by either adding the drafter YAML or removing the reference.
 
 Place at `models/<model-id>/<engine>/compose/<topology>/<quant-slug>/<serving>.yml`:
 
-- Engines: `vllm`, `llama-cpp` today (others when we add them)
+- Engine dirs (filesystem): `vllm`, `llama-cpp`, `ik-llama`, `beellama` (`sglang` parked)
+- **⚠️ Registry slug prefix ≠ filesystem dir.** The slug prefixes are `vllm` / `llamacpp` / `ik-llama` / `beellama` — note **`llamacpp`, NOT `llama-cpp`** (`registry-emit.sh` special-cases it). So a `models/<id>/llama-cpp/…` compose registers under a `llamacpp/<slug>` key, e.g. `llamacpp/gemma-12b-single-q8kxl` (not `llama-cpp/gemma-12b-single-q8kxl`).
 - Topologies: `single`, `dual`, `multi4`
 - Quant slug: exactly matches the `weights_variant` key (`autoround-int4`, `awq`, `unsloth-q4km`, etc.)
-- Serving filename: the feature stack only (`fp8-mtp.yml`, `turbo.yml`, `dflash.yml`, etc.). Do not create `docker-compose.yml` or `default.yml`; defaults are registry pointers.
+- **Serving filename (`<serving>.yml`)** — the **serving-feature delta** from a plain boot; never the weights-quant (that's the `<quant>/` dir) or the topology (that's the path). Form: **`<drafter>[-<kv>][-vision].yml`**, suffix order drafter → KV → vision (per CLAUDE.md "Feature suffix order").
+  - `base.yml` — plain: engine-**default** KV, no drafter. Don't name the default KV (no `bf16.yml` when bf16 is the default — that's `base.yml`); only name a **non-default** KV (`int8.yml`, `fp8.yml`, `tq3.yml`).
+  - Drafter / combined: `mtp.yml`, `dflash.yml`, `fp8-mtp.yml`, `mtp-vision.yml`.
+  - **Workload-tuned** variants (a use-case tuning — different ctx/sampling, *not* a feature delta) keep a descriptive name: `long-text.yml`, `tools-text.yml`, `bounded-thinking.yml`, `minimal.yml`. Recognized exception, orthogonal to the feature stack.
+  - Never `docker-compose.yml` or `default.yml` — defaults are registry pointers (`DEFAULTS`).
+  - **Grandfathered (do NOT rename):** files predating this stay as-is (e.g. `bf16.yml` for a default-KV variant, `turbo.yml`, `two-stage.yml`) — renaming re-paths the registry `compose_path` for pure churn. New composes only.
+- **Registry slug (the key in `compose_registry.py`)** — for **new** models, compose it to mirror the path: **`<engine>/<model>-<topology>-<quant>[-<feature>]`** (the path components `<model>/<engine>/<topology>/<quant>/<serving>` flattened with hyphens, engine first). Make it self-descriptive — reading the slug should tell you the model, card count, quant, and serving stack.
+  - `<engine>` — slug prefix from the rule above: `vllm` / `llamacpp` / `ik-llama` / `beellama`.
+  - `<model>` — short model id: `gemma-12b`, `qwen-35b-a3b`.
+  - `<topology>` — `single` / `dual` / `multi4`.
+  - `<quant>` — the weights family: `bf16`, `int8`, `q8kxl`, `iq4ks`, `awq`, `autoround-int4`, …
+  - `[-<feature>]` — optional serving/drafter modifier: `-mtp`, `-dflash`, `-vision`, `-turbo`.
+  - Examples: `vllm/gemma-12b-dual-bf16-mtp`, `vllm/gemma-12b-single-int8-mtp`, `llamacpp/gemma-12b-single-q8kxl`.
+  - **Grandfathered (do NOT rename):** slugs that predate this scheme stay as-is for backward compatibility — e.g. `vllm/dual` / `vllm/minimal` (qwen3.6-27b), `vllm/gemma-bf16-mtp` / `gemma-mtp-tp1` (gemma-4-31b), `vllm/gemma-a4b` (gemma-4-26b-a4b). Renaming a shipped slug breaks `switch.sh <slug>` for users; apply the convention to **new** models + variants only.
+
+### Profile header (mandatory)
+
+Every compose opens with the `# Profile (at-a-glance):` block — `Model` / `Topology` / `Drafter` / `KV` / `Vision` / `Max ctx` / `Genesis` / **`Status`** / `Best for` — plus a sibling-comparison table. **`Status:` is required**: exactly one of `✅ Production` · `⚠️ Production w/ caveats` · `🧪 Experimental` · `👁️ Preview` · `⏸️ Upstream-gated` · `🗑️ Deprecated`, with a `Caveats:` line whenever it's `⚠️`/`👁️`/`⏸️`/`🗑️`. `test-compose-status-drift` asserts the header status matches the registry entry, so a missing/mismatched `Status` **fails CI**. Full schema: [`CLAUDE.md`](../CLAUDE.md) → "Profile schema header." For a non-Qwen3-Next model write `Genesis: N/A — Genesis is Qwen3-Next-specific`.
 
 ### Required env-var hooks (post-v0.7.0)
 
@@ -240,11 +260,16 @@ COMPOSE_REGISTRY = {
         mem_util=0.92,
         compose_path="models/<model-id>/vllm/compose/dual/autoround-int4/<serving>.yml",
         default_port=8040,                           # MUST equal the compose's ${PORT:-NNNN} fallback (parity test)
-        kvcalc_key="<model-id>:dual",                # vLLM: "<model>:<kvcalc-profile>"; llama.cpp/ik: "SKIP"
+        kvcalc_key="<model-id>:dual",                # vLLM: "<model>:<kvcalc-profile>"; llama.cpp/ik-llama/beellama: "SKIP"
         required_engine_features=["turboquant_3bit_nc"],
+        status="production",                         # production|caveats|experimental|preview|upstream-gated|deprecated
+                                                     #   maps to the compose header ✅/⚠️/🧪/👁️/⏸️/🗑️ (test-compose-status-drift checks both match)
+        status_note=None,                            # REQUIRED non-None string when status is caveats/preview/upstream-gated/deprecated
     ),
 }
 ```
+
+**llama.cpp-family entries (`llamacpp/…`, `beellama/…`, `ik-llama/…`):** the slug prefix is `llamacpp` / `beellama` / `ik-llama` — **NOT** the `llama-cpp` filesystem dir. Use `drafter=None` for no spec-dec (don't invent a `"none"` string sentinel unless an existing profile uses one), `kvcalc_key="SKIP"` (kv-calc doesn't model these engines), and mirror an existing row (`beellama/gemma-dflash`, a qwen `llamacpp/*`) for the engine-specific fields. **Registry entry ≠ default:** do NOT add a `DEFAULTS` row for an `experimental` / `preview` / `upstream-gated` entry unless the change is explicitly a default promotion — `<model>/default` intentionally skips non-functional statuses.
 
 ### Picking `default_port`
 
@@ -280,11 +305,18 @@ A registry entry isn't enough: every entry must **validate against the profile c
 
 **If the model ships a vendored chat-template** (a `.jinja` mounted into the container), register it in `scripts/lib/profiles/patches.yml` with `delivery_mechanism: chat_template`, the `load_bearing_when` composes, and a `drift_guard.check` that **encodes the symmetric restart+settle protocol** (the check string must contain `symmetric`, `docker restart`, `settle`, `>=3`, `grand mean` — copy the `qwen-froggeric-chat-template` entry as the template). Otherwise `test-patch-attribution` flags it as an orphan. `status` must be one of `verified | unverified | suspect` (use `unverified` until live-validated).
 
+**If the model needs a vendored RUNTIME overlay** — a behavioral patch / `install_script` that mutates engine code at boot (e.g. the gemma-4-12b p-RoPE long-context cache fix, the Marlin pad, INT8-PTH), not just a chat-template — it's more than one `patches.yml` row. Wire all of: (1) `patches.yml` entry (`delivery_mechanism: install_script`, `files`, `drift_guard.check`, `upstream` status); (2) the engine's `vendored_overlays` list in `engines/<engine>.yml` if it's engine-pin-specific; (3) the compose **mount + entrypoint `install.sh` invoke**; (4) a path hint in `diagnose_profile_cli.py` when the overlay id can't be resolved from the filename. `test-patch-attribution` cross-checks the `patches.yml` ↔ compose-mount wiring, so a half-wired overlay reds the gate.
+
 **Two more easy-to-forget mechanics:**
-- **Catalog-size guard** — `scripts/tests/test-compose-registry-disk.sh` asserts a hardcoded compose/registry count; bump it by the number of composes you added (`47 → 55`-style).
+- **Catalog-size guard** — `scripts/tests/test-compose-registry-disk.sh` asserts a hardcoded compose/registry count; bump it by the number of composes you added (`47 → 55`-style). It **globs the disk**, so an *untracked scratch* compose under `models/*/*/compose/...` fails it too — before blaming the registry, run `git ls-files --others --exclude-standard 'models/*/*/compose/*/*/*.yml'` and either register or remove the stray.
+- **Parity guard engine allowlist** — `test-switch-registry-parity.sh` scans a per-engine, per-topology allowlist (e.g. single-card `vllm`/`llama-cpp`/`ik-llama`). Adding a *first-class single-card* variant for an engine not in that scan (e.g. single-card `beellama`) may require extending the test's scan, or it'll miss/false-fail the new surface.
 - **`+1 ../` mount depth** — composes live at `<topology>/<quant>/<serving>.yml`, one level deeper than the old flat layout, so relative mounts need an extra `../` (e.g. `${MODEL_DIR:-../../../../../../models-cache}`, 6× for `single/<quant>/`). `test-compose-mounts-resolve` catches a wrong depth.
 
 **Launchers are registry-derived (since v0.8.x) — do NOT edit `launch.sh`/`switch.sh`.** Adding the registry entry makes the variant launchable automatically; `<engine>/default` and `<engine>/<topology>/default` resolve via the registry's `DEFAULTS` map (topology-autodetect). Promoting a new default = one line in `DEFAULTS`, never a `default.yml` file.
+
+**`<model>/default` resolves via `ENGINE_PREFERENCE` — add a `DEFAULTS` row per engine you ship.** Your new model is immediately runnable by name (`--model <id>` / `<id>/default`). For `<id>/default` to resolve cleanly on a given topology, that `(model, engine, topology)` must have a **functional** `DEFAULTS` entry (status `production`/`caveats` — a `preview`/`experimental`/`upstream-gated`/`deprecated` config is skipped, never auto-defaulted). The resolver walks `ENGINE_PREFERENCE[topology]` (single = `[beellama, ik-llama, llamacpp, vllm]`; dual/multi = `[vllm, ik-llama, llamacpp, beellama]`) and picks the first engine with a functional `DEFAULTS` slug, so:
+- Add a `DEFAULTS` row for **each engine × topology** you want `<model>/default` to cover. With no functional default at the detected topology the resolver emits a notice and falls back to the nearest-lower topology, else a clear "pick explicitly" message (it never crashes) — fine while a model is still validating, but the bare-launch UX wants at least one production row.
+- **`RECOMMENDED_DEFAULT_MODELS` is intentionally NOT auto-grown** — a new model is runnable + resolvable but is never the bare-`launch.sh` auto-default until you explicitly add its id to that shortlist. Leave it alone unless you mean to promote the model to a first-class default.
 
 ## Step 5 — Boot + verify-full + capture the boot log
 
@@ -326,7 +358,7 @@ If they differ by 2×, suspect K=V tying (either the model is tied and you misse
 
 ## Step 6 — Author CalibrationData YAML
 
-After 4+ measured boot peaks (varying KV format / max_ctx / TP), author `scripts/lib/profiles/calibration/<model-id>.yml`:
+**vLLM entries only.** llama.cpp-family entries (`llamacpp`/`beellama`/`ik-llama`, `kvcalc_key="SKIP"`) are NOT modelled by kv-calc → **skip CalibrationData** for them (kv-calc has no per-token model for those engines); still record VRAM/TPS in BENCHMARKS + a learnings note. For vLLM entries: after 4+ measured boot peaks (varying KV format / max_ctx / TP), author `scripts/lib/profiles/calibration/<model-id>.yml`:
 
 ```yaml
 schema_version: 1
@@ -354,7 +386,7 @@ rows:
 After authoring the calibration YAML, run:
 
 ```bash
-bash tools/kv-calc.py --calibration
+python3 tools/kv-calc.py --calibration
 ```
 
 Look at the verdict accuracy per model. Target: **≥80% within ±1.5 GB**.
@@ -477,6 +509,8 @@ vision_capable: false
 
 Mirror `models/qwen3.6-27b/vllm/compose/dual/autoround-int4/fp8-mtp.yml` shape, swap model path + adjust `--max-model-len` based on KV_MATH projections.
 
+> _Illustrative add-time snapshot. This model was later validated + promoted out of preview: the live dual compose is now `dual/autoround-int4/fp8.yml` (slug `vllm/qwen-35b-a3b-dual`, **262K + vision**, no MTP, vLLM v0.22.0) — see BENCHMARKS.md._
+
 **Per-card budget projection from KV_MATH**:
 
 - Weights / 2 = ~11.5 GB (INT4)
@@ -532,7 +566,7 @@ When the new model is ready for review:
 - [ ] `bash scripts/launch.sh --variant <slug>` boots cleanly + `verify-full.sh` 8/8 PASS
 - [ ] Boot log captured + reviewed against KV_MATH projections (per_token_bytes within 10% of formula)
 - [ ] `scripts/lib/profiles/calibration/<id>.yml` populated with ≥4 measured rows
-- [ ] `bash tools/kv-calc.py --calibration` verdict accuracy ≥80% on this model
+- [ ] `python3 tools/kv-calc.py --calibration` verdict accuracy ≥80% on this model
 - [ ] `bash scripts/diagnose-profile.sh <slug>` GREEN
 - [ ] BENCHMARKS.md row added (TPS + ctx + VRAM + KV + drafter + AL + engine pin + Genesis pin + date)
 - [ ] `learnings/<id>.md` populated per the canonical template

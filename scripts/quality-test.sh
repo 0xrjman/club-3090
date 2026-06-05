@@ -476,5 +476,15 @@ else:
 PYEOF
 fi
 
+# ---- pointer: where to read failure reasons --------------------------------
+if [[ -f "$JSON_OUT" ]]; then
+  echo
+  echo "Failure reasons: see the 'Failure breakdown:' above (failure_mode + detail per failed scenario)."
+  echo "Dig deeper — full trace / older run / filter / diff:"
+  echo "  benchlocal-cli inspect ${JSON_OUT} --failed                 # all failures + reason"
+  echo "  benchlocal-cli inspect ${JSON_OUT} --scenario <ID> --full   # full prompt/response/verifier trace"
+  echo "  benchlocal-cli inspect ${JSON_OUT} --mode timeout           # filter by failure type"
+fi
+
 echo
 exit "$RC"

@@ -16,7 +16,7 @@
 #   Vision:    no (text-only)
 #   Max ctx:   200K (max-context single-card path)
 #   Genesis:   v7.72.2
-#   Status:    ⚠️ Production w/ caveats
+#   Status:    🗑️ Deprecated
 #   Caveats:   Cliff 2b at >50K single-prompt context. Sandermage/genesis-vllm-patches#22. Workaround: dual.yml or llamacpp/default.
 #   Best for:  Max single-card context window for one-shot summarization /
 #              long-document Q&A; slower decode (no spec-decode) is the trade
@@ -118,7 +118,7 @@ services:
   vllm-qwen36-27b-long-text-no-mtp:
     image: ${VLLM_IMAGE:-vllm/vllm-openai:nightly-${VLLM_NIGHTLY_SHA}}
     container_name: "${ESTATE_CONTAINER:-vllm-qwen36-27b-long-text-no-mtp}"
-    restart: "no"
+    restart: ${CLUB3090_RESTART:-unless-stopped}
     ports:
       - "${BIND_HOST:-0.0.0.0}:${ESTATE_PORT:-${PORT:-8021}}:8000"
     volumes:

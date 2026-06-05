@@ -241,11 +241,79 @@ On vLLM, `turboquant_3bit_nc` is the long-context default; where context allows,
 
 ## Setup
 
+### How do I test my own compose or model on my rig?
+
+You don't need the catalog — serve any safetensors repo (`scripts/pull.sh`) or a GGUF you already have (copy the closest `ik-llama`/`llama.cpp`/`beellama` compose), tune it with the fast scripts (`verify-full` / `verify-stress` / `bench.sh` / `quality-test --full|--medium`), then run the full `rebench-full` gate. Single-or-dual, any engine. Full walkthrough + a tuning guide (context ceiling, NIAH, KV quant, MTP/DFlash n-sweeps): **[Bring your own model or compose](BRING_YOUR_OWN.md)**.
+
 ### How do I pick the right model + variant?
 
 For a first install, run `bash scripts/setup.sh` with no model argument in a normal terminal. It opens a hardware-aware model picker, marks Qwen / Gemma / Both as eligible or not for your detected GPUs, then continues into the existing download flow.
 
 After setup, run `bash scripts/launch.sh`. The wizard asks which model (filtered to what you've downloaded), then which GPU(s) to use, auto-picks TP for homogeneous sets (PP for heterogeneous), filters variants by hardware fit, shows a per-card VRAM projection from `tools/kv-calc.py` for the suggested default, then boots and runs `verify-full.sh`. Power-user forms still work: `bash scripts/setup.sh qwen3.6-27b`, `bash scripts/launch.sh --variant vllm/dual`, partial flags like `bash scripts/launch.sh --model qwen3.6-27b --gpus 0,1` (skips prompts), `--tp 4 --pp 2` to override parallelism, plus `setup.sh --help` / `launch.sh --help` for the full flag list. This wizard covers the **curated catalog**; for a model *not* in the catalog (any safetensors HF repo), use `scripts/pull.sh` instead — see [docs/PULL.md](PULL.md).
+
+### How do I switch to / try a different model?
+
+Two parts: *what's available* and *what happens if I don't have it yet.*
+
+**List what your machine can run.** `bash scripts/switch.sh --list` prints the variants runnable on *this* box — generated live from the compose registry (the single source of truth), then filtered to the topologies your GPU count supports (1 GPU → single-card configs only; 2 → single + dual; 4+ → everything). It prints a one-line note when it hides anything; add `--all` (`bash scripts/switch.sh --list --all`, or `--list-all`) to see every variant regardless of GPU count. Detection fails open — if it can't tell how many GPUs you have, it shows everything.
+
+**Switch to one you've already downloaded.** Either re-run the wizard (`bash scripts/launch.sh`, which filters the menu to models present in `MODEL_DIR` and verifies the boot), or go direct by slug:
+
+```bash
+bash scripts/launch.sh --variant vllm/dual      # boots + runs verify-full.sh
+bash scripts/switch.sh vllm/long-vision          # stateless: down the old, up the new
+```
+
+`launch.sh` wraps `switch.sh` and then `verify-full.sh`; `switch.sh` is the bare down-old/up-new if you just want the swap.
+
+**Don't want to remember a slug? Use `<model>/default`.** It auto-resolves to a config for *that model* on *your* hardware — your `.env` pin if you've set one (see the next Q), else the curated pick for the detected topology:
+
+```bash
+bash scripts/launch.sh --variant qwen3.6-27b/default   # this model, picked for your rig
+bash scripts/switch.sh qwen3.6-27b/default
+```
+
+(`<engine>/default` — e.g. `vllm/default` — still means "the maintainer's recommended config for that engine"; that's a *different* token, owned by the repo, not by you.)
+
+**If the weights aren't downloaded, it does NOT auto-pull — by design.** Pointing `launch.sh` / `switch.sh` at a model you don't have stops with a hint instead of silently fetching 20+ GB:
+
+```
+[launch] ERROR: <model> is not installed under <MODEL_DIR>.
+[launch]        Run: bash scripts/setup.sh <model>
+```
+
+Downloading is a deliberate, separate step:
+
+- **Curated catalog model** → `bash scripts/setup.sh <model>` (grabs the right weights + patches, then verifies).
+- **A safetensors HF repo our generator can handle** → `bash scripts/pull.sh <org/Model> --profile-like <a-registry-key>`. It evaluates *any* safetensors repo against our arch support + KV math (add `--dry-run` for evaluate-only, no download) and — **only if it clears every gate** (architecture supported → compose-emittable → fits your GPUs) — downloads and boots it. Anything that doesn't clear them stops with a precise reason, not a crash. Full guide: [docs/PULL.md](PULL.md).
+
+**Scope — this is not a "run any weights/quant" runner.** These scripts serve the stack's **supported models**: the curated catalog (`setup` / `switch` / `launch`), plus — via `pull` — **safetensors** repos whose **architecture our generator supports** (vLLM only). Outside that, they won't boot the model; they tell you honestly instead of half-running it:
+> - **GGUF / `.bin` repos** are not served by these scripts — use llama.cpp manually (see [The model I want isn't in the supported list](#the-model-i-want-isnt-in-the-supported-list--can-i-still-run-it)). `pull` aborts such repos at the deriver as `unsupported-format`.
+> - **Unsupported architectures / quants** (safetensors but outside the patch matrix) stop at a derive/eligibility gate with a structured reason — they are evaluated, never silently run.
+
+See also [How do I pick the right model + variant?](#how-do-i-pick-the-right-model--variant) for the first-install wizard, and [The model I want isn't in the supported list](#the-model-i-want-isnt-in-the-supported-list--can-i-still-run-it) for the pull-gate in depth.
+
+### How do I set my own default config?
+
+There are **two layers of "default"**, with different owners:
+
+| Token | Means | Who owns it |
+|---|---|---|
+| `<engine>/default` (e.g. `vllm/default`) | the repo's recommended config for that engine, on the detected topology | club-3090 (changes by PR) |
+| `<model>/default` (e.g. `qwen3.6-27b/default`) | **your** preferred way to run that model | **you** (`--set-default`) |
+
+By default `<model>/default` resolves to the *curated* pick — the first engine in `ENGINE_PREFERENCE` for your topology that has a healthy config (single-card Qwen → `ik-llama/iq4ks-mtp`; dual → `vllm/dual`). To make it resolve to **your** choice instead, pin a slug:
+
+```bash
+bash scripts/switch.sh --set-default vllm/dual-turbo   # pin (writes .env)
+bash scripts/switch.sh --clear-default qwen3.6-27b      # remove the pin
+bash scripts/switch.sh --defaults                       # show what each model resolves to + pin vs curated
+```
+
+- A pin is a **full slug**, so it captures engine + topology + config in one pick. It's stored in `.env` as `CLUB3090_DEFAULT_<MODELID>` (e.g. `CLUB3090_DEFAULT_QWEN3_6_27B=vllm/dual-turbo`) — one key per model.
+- After any successful `bash scripts/launch.sh` boot, it offers: *"Make `<slug>` your default for `<model>`? [y/N]"* — one keypress to pin it.
+- A **bare** `bash scripts/launch.sh` with a pin set asks *"Launch your default `<slug>`? [Y/n]"* — one keypress to go.
+- Pins are **validated, never blocking**: if a pin names an unknown slug, the wrong model, a config for a different topology than your rig, or a known-unhealthy config, the resolver warns and falls back to the curated default — it never stops a launch.
 
 ### `bash scripts/setup.sh qwen3.6-27b` is downloading 20+ GB. Where does it go? / Can I put models on a different drive?
 
@@ -317,17 +385,29 @@ Yes. Add a connection in Open WebUI's Settings → Connections → OpenAI: base 
 
 ### Will this work with VS Code GitHub Copilot LLM Gateway?
 
-Yes, but you need a compose with **≥48K context** — Copilot's LLM Gateway sends ~20K tokens of tool-schema preamble (50+ VS Code tools enumerated in a structured-outputs JSON schema) on every request, which alone consumes most of a small context budget. Use `tools-text.yml` (75K + fp8 + PN8 enabled — Cliff 1 closed):
+Yes — mind three things: context size, streaming tool-calls, and client-side `max_tokens`.
 
-```bash
-bash scripts/switch.sh vllm/tools-text
-```
+**Context ≥48K.** Copilot's LLM Gateway sends ~20K tokens of tool-schema preamble (50+ VS Code tools enumerated in a structured-outputs JSON schema) on *every* request, so a small context budget is eaten before any real work. The old `vllm/tools-text` compose was **retired (deprecated 2026-05-31)**; use a current functional vLLM compose (both stable v0.22.0, tools + structured outputs):
 
-There's a second wrinkle: Copilot's LLM Gateway sometimes sends very low `max_tokens` (e.g. 64) on probe-style requests. With `tool_choice: required` (which Copilot enforces via `minItems: 1` on its structured-outputs schema), the model must emit a tool-call JSON that wraps a real argument like a file path — and 64 tokens isn't enough to fit `{"name": "read_file", "parameters": {"filePath": "/long/abs/path"}}`. The truncated JSON arrives at the gateway as "empty response." If you see this pattern, it's a client-side limit, not the server. Other OpenAI-compat clients (Cline / Continue.dev / Cursor) tend to send realistic max_tokens by default and don't hit this.
+- **2× 3090 → `vllm/dual`** (262K — the comfortable fit): `bash scripts/switch.sh vllm/dual`
+- **1× 3090** — there's no longer a dedicated ≥48K single-card vLLM tools compose; `vllm/minimal` ships 32K. You can raise it (fp8 KV is compact), but a single 24 GB card has tight KV headroom — *cf.* the 180K boot-OOM in [#35](https://github.com/noonghunna/club-3090/issues/35) — so increase cautiously and lower if boot refuses with a KV-cache message: `MAX_MODEL_LEN=49152 bash scripts/switch.sh vllm/minimal`
 
-**Server-side fix landed 2026-04-29:** the Genesis P68/P69 long-context tool-adherence patches were silently overriding `tool_choice: auto → required` and injecting "must use a tool" reminders whenever prompt > 8000 chars. That made greetings + clarifying questions stall on every IDE-agent setup (Cline, Cursor, OpenCode, and Copilot Gateway combined). We disabled both in `tools-text.yml`. Behavior now: greeting → plain-text reply ("Hello! How can I help you today?"); tool request → clean `read_file({"path": "..."})` call. P64 and PN8 stay enabled (real targeted bugfixes, no user-intent override).
+⚠️ **Streaming tool-calls.** These composes default to `--tool-call-parser qwen3_coder`, which has an **open streaming-tool-call bug** ([#145](https://github.com/noonghunna/club-3090/issues/145)) on reasoning-enabled composes — tool-calls can be silently dropped over a *streaming* connection, and Copilot streams. If tool-calls vanish, edit the compose's `command:` block (`--tool-call-parser qwen3_coder` → `qwen3_xml`) and relaunch. Non-streaming clients are unaffected.
 
-Background + bisection: [club-3090 #2](https://github.com/noonghunna/club-3090/issues/2#issuecomment-4346345554).
+**Low `max_tokens` (client-side).** Copilot's gateway sometimes sends very low `max_tokens` (e.g. 64) on probe-style requests. With `tool_choice: required` (which Copilot enforces via `minItems: 1` on its structured-outputs schema), the model must emit a tool-call JSON that wraps a real argument like a file path — and 64 tokens isn't enough to fit `{"name": "read_file", "parameters": {"filePath": "<a long absolute path>"}}`. The truncated JSON arrives at the gateway as "empty response." That's a client-side limit, not the server — Cline / Continue.dev / Cursor send realistic `max_tokens` by default and don't hit it.
+
+(The old Genesis P68/P69 tool-adherence patches — which used to silently flip `tool_choice: auto → required` and stall greetings past ~8000 chars — are **not** in the current stable v0.22.0 composes, so that class of stall no longer applies.) Also keep temperature ~0.6 (see the agent-stops-mid-task entry above). Background + bisection: [club-3090 #2](https://github.com/noonghunna/club-3090/issues/2#issuecomment-4346345554).
+
+### My agent (Hermes / Cline / OpenHands) stops mid-task with a one-character or empty reply (`finish_reason: stop`)
+
+Almost always **sampling temperature**. Qwen3.6's model card sets `temperature: 1.0`, and at 1.0 the model intermittently emits a stray `<think>` block or a one-character "answer" (e.g. just `.`) and stops — *before* finishing a multi-step tool task. Lower it to **~0.6** (top_p 0.95, top_k 20).
+
+Our composes already default temperature to 0.6 server-side (`--override-generation-config` on vLLM; `--temp 0.6` on llama.cpp / ik_llama / beellama) — **but a `temperature` sent in the request wins over the server default**, and most agent harnesses send their own (often inheriting the model card's 1.0). So set it in your **client/agent config**:
+
+- Hermes-WebUI / OpenHands / Cline / Continue / Cursor → set the model's `temperature` to `0.6` in its provider/model settings.
+- Raw API → pass `"temperature": 0.6` in the request body.
+
+Keep thinking **off** for agentic/tool work too (our composes default `enable_thinking: false`; if your client re-enables it, that compounds the stray-`<think>` behavior). Background: [#232](https://github.com/noonghunna/club-3090/issues/232).
 
 ---
 

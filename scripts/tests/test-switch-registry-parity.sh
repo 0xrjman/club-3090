@@ -23,7 +23,7 @@ for key, entry in COMPOSE_REGISTRY.items():
 PY
 )"
 
-declare -A REG_MAP REG_PORT SW_MAP SW_PORT VARIANTS VARIANT_DEFAULT_PORT
+declare -A REG_MAP REG_PORT SW_MAP SW_PORT VARIANTS VARIANT_DEFAULT_PORT VARIANT_STATUS VARIANT_STATUS_NOTE
 while IFS=$'\t' read -r key spec port; do
   [[ -n "$key" ]] || continue
   REG_MAP["$key"]="$spec"
@@ -70,7 +70,7 @@ sys.path.insert(0, str(root))
 from scripts.lib.profiles.compose_registry import COMPOSE_REGISTRY
 
 registered_paths = {entry["compose_path"] for entry in COMPOSE_REGISTRY.values()}
-for engine in ("vllm", "llama-cpp", "ik-llama"):
+for engine in ("vllm", "llama-cpp", "ik-llama", "beellama"):
     for path in sorted(root.glob(f"models/*/{engine}/compose/single/*/*.yml")):
         rel = path.relative_to(root).as_posix()
         print(f"{rel}\t{1 if rel in registered_paths else 0}")
