@@ -18,7 +18,7 @@ set -euo pipefail
 #           the EXACT structured reason token:
 #             vllm/gemma-int8-mtp       -> overlay-feature
 #             synthesized runtime   -> kv
-#             vllm/tools-text       -> drafter
+#             synthesized runtime     -> drafter
 #             clean tp2 on 1 GPU    -> gpu-count
 #             a pip-install engine  -> engine-install-method
 #             autoround weight_fmt  -> unsupported-quant-for-derived:autoround
@@ -213,14 +213,12 @@ ei_kv = mk_einput("vllm/gemma-a4b", der=mk_der(weight_format="bfloat16",
 ei_kv.runtime["kv_format"] = "turboquant_3bit_nc"
 expect_refuse(ei_kv, "derived-runtime-unsupported:kv", "e1-neg/kv")
 
-# drafter: vllm/tools-text has drafter=qwen-mtp-builtin. Engine
-# vllm-nightly-clean is clean, no required features, kv fp8_e5m2 -> the
-# first failing clause is drafter.
-expect_refuse(
-    mk_einput("vllm/tools-text", der=mk_der(weight_format="bfloat16",
-                                            torch_dtype="bfloat16"),
-              gpu_count=1, sel_gpus=(0,)),
-    "derived-runtime-unsupported:drafter", "e1-neg/drafter")
+# drafter: synthesize a clean runtime whose only derived-emission blocker is a drafter.
+ei_drafter = mk_einput("vllm/gemma-a4b-single", der=mk_der(weight_format="bfloat16",
+                                                       torch_dtype="bfloat16"),
+                       gpu_count=1, sel_gpus=(0,))
+ei_drafter.runtime["drafter"] = "qwen-mtp-builtin"
+expect_refuse(ei_drafter, "derived-runtime-unsupported:drafter", "e1-neg/drafter")
 
 # gpu-count: a clean no-drafter TP=2 shape on a simulated 1-GPU einput.
 expect_refuse(
@@ -229,12 +227,12 @@ expect_refuse(
               gpu_count=1, sel_gpus=(0,)),
     "derived-runtime-unsupported:gpu-count", "e1-neg/gpu-count")
 
-# engine-install-method: a pip-install engine (vllm-stable, install.method
+# engine-install-method: a pip-install engine (vllm-pip-baseline, install.method
 # pip). No registry entry uses it; synthesize the runtime to point at it.
 ei_pip = mk_einput("vllm/gemma-a4b-single",
                    der=mk_der(weight_format="bfloat16", torch_dtype="bfloat16"),
                    gpu_count=1, sel_gpus=(0,))
-ei_pip.runtime["engine"] = "vllm-stable"
+ei_pip.runtime["engine"] = "vllm-pip-baseline"
 expect_refuse(ei_pip, "derived-runtime-unsupported:engine-install-method",
               "e1-neg/engine-install-method")
 

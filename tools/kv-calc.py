@@ -247,7 +247,7 @@ GENERIC_DENSE_ACTIVATION_FLOOR_GB = 1.5         # ≥ Gemma dense constant activ
 # Compose presets (per-model)
 # =============================================================================
 COMPOSE_ALIAS_TEXT = {
-    "qwen3.6-27b": "minimal=vllm/minimal long-text=vllm/long-text long-text-no-mtp=vllm/long-text-no-mtp long-vision=vllm/long-vision bounded-thinking=vllm/bounded-thinking tools-text=vllm/tools-text dual=vllm/dual dual-turbo=vllm/dual-turbo dual-dflash=vllm/dual-dflash dual-dflash-noviz=vllm/dual-dflash-noviz dual-bf16=vllm/dual-bf16 dual-int8=vllm/dual-int8 dual-tq3-mtp=vllm/dual-tq3-mtp dual-tq3-mtp-genesis=vllm/dual-tq3-mtp-genesis dual-tq3-nomtp=vllm/dual-tq3-nomtp dual4=vllm/dual4 dual4-dflash=vllm/dual4-dflash",
+    "qwen3.6-27b": "minimal=vllm/minimal dual=vllm/dual",
     "qwen3.6-35b-a3b": "qwen-a3b-preview-single=vllm/qwen-a3b-preview-single qwen-35b-a3b-dual=vllm/qwen-35b-a3b-dual",
     "gemma-4-31b": "gemma-dual=vllm/gemma-bf16-mtp gemma-dual-int8=vllm/gemma-int8-mtp gemma-single=vllm/gemma-mtp-tp1",
     # gemma-4-12b legacy alias namespace is keyed by model id, so reusing the
@@ -268,9 +268,6 @@ REGISTRY_TO_LEGACY_COMPOSE = {
 COMPOSE_COMPAT_OVERRIDES = {
     ("qwen3.6-27b", "minimal"): {"max_num_seqs": 4, "mem_util": 0.90},
     ("qwen3.6-27b", "dual"): {"mem_util": 0.95},
-    ("qwen3.6-27b", "dual-turbo"): {"mem_util": 0.95},
-    ("qwen3.6-27b", "dual-dflash-noviz"): {"max_num_seqs": 2},
-    ("qwen3.6-27b", "dual4"): {"mem_util": 0.95},
     ("gemma-4-31b", "gemma-single"): {"kv_format": "fp8_e5m2"},
 }
 

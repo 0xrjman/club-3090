@@ -321,8 +321,7 @@ compose_hw_model_status() {
   case "$model" in
     qwen3.6-27b)
       candidates=(
-        "${repo_root}/models/qwen3.6-27b/vllm/compose/single/autoround-int4/long-text.yml"
-        "${repo_root}/models/qwen3.6-27b/vllm/compose/single/autoround-int4/tq3-mtp.yml"
+        "${repo_root}/models/qwen3.6-27b/vllm/compose/single/autoround-int4/minimal.yml"
       )
       friendly_need="needs 20 GB+ VRAM (24 GB recommended)"
       ;;

@@ -1,40 +1,67 @@
 # ===========================================================================
 # Profile (at-a-glance):
-#   Model:     Qwen3.6-27B (Lorbus AutoRound INT4)
+#   Model:     Qwen3.6-27B (Lorbus AutoRound INT4 + BF16 mtp.fc preserved)
 #   Topology:  Dual 3090 PCIe (TP=2, no NVLink)
-#   Drafter:   none — MTP intentionally disabled
-#   KV:        turboquant_3bit_nc (TQ3, 0.375 bytes/token)
+#   Drafter:   MTP n=3 (built-in)
+#   KV:        turboquant_3bit_nc (TQ3) — 3-bit per element
 #   Max ctx:   262144 (262K)
-#   Streams:   max-num-seqs=2 (matched-config sibling of dual/int8.yml)
-#   Genesis:   none — pure upstream nightly + only the unavoidable marlin-pad overlay
 #   Status:    🗑️ Deprecated
-#   Caveats:   Pruned 2026-05-31 — superseded by vllm/dual (fp8, same 262K/2-stream, faster + MTP). TQ3 KV density wasn't worth the decode cost here; recover from git if needed.
-#   Best for:  (deprecated — was: long-context multi-tenant where TQ3 KV-pool
-#              expansion mattered more than MTP TPS)
+#   Caveats:   Tombstoned 2026-05-11 — NOT shipping. Genesis-free TQ3+MTP needs an
+#              upstream P67-equivalent multi-query TurboQuant kernel that doesn't exist
+#              yet (see gap below). Kept as a reference / re-test surface. Use
+#              dual/tq3-mtp-genesis.yml (upstream-gated) or dual/turbo.yml instead.
+#   Best for:  Reference / re-test surface once an upstream P67-equivalent
+#              multi-query TurboQuant spec-decode kernel lands.
 # ---------------------------------------------------------------------------
-# Why this compose exists:
+# 2026-05-11 UPSTREAM-FIX GAP (no Genesis):
 #
-#   TQ3 + MTP on Qwen3-Next requires 5 upstream fixes (Sander's Genesis
-#   P64/P65/P66/P68/P69; see vllm-issue#40880). Only 1 of 5 has a
-#   community-PR analog today (vllm#40914). The Genesis-free TQ3+MTP path is
-#   therefore tombstoned in dual/tq3-mtp.yml — re-test when upstream catches up.
+#   TQ3 + MTP on Qwen3-Next requires Genesis-side handling that upstream
+#   vLLM does not yet have. Sander initially closed vllm-issue#40880 with
+#   the v7.14 P64/P65/P66/P68/P69 stack, then later generalized the real
+#   fix as P67/P67b: a K+1-aware multi-query TurboQuant path against the
+#   compressed cache.
 #
-#   In the meantime, TQ3 KV WITHOUT MTP works perfectly on vanilla upstream
-#   vLLM nightly + only marlin-pad (which we already vendor for AutoRound TP=2
-#   booting). Verify-stress 7/7 pass on the 7-step boundary ladder including
-#   60K and 91K needle recall. The trade is: no MTP TPS acceleration (~67 TPS
-#   raw decode vs ~85 TPS with MTP working at AL=2.31× on INT8 PTH baseline)
-#   but in exchange:
-#     KV pool   = 1,727,935 tokens at 262K (6.59× concurrency)
-#     vs INT8 PTH: 605K (2.31×)  — 2.86× more KV budget per VRAM byte
+#   Today's upstream-PR landscape still does not cover that P67 behavior:
+#     - PR #40914 (OPEN) — synthetic seq_lens K+1 routing. Local rebases
+#       on this Qwen3.6-27B nightly stack were negative: with the overlay
+#       active, MTP acceptance reached 100% but long-context recall collapsed
+#       into `!` floods and tool/multi-turn paths timed out. Dropping it
+#       improved verify-stress from 3/7 to 5/7, but needles still failed.
+#     - PR #40798 (OPEN) — TQ decode workspace pre-allocation (separate
+#       workspace-lock bug; partially required for boot)
+#     - PR #42215 (OPEN) — TQ decode kernel warmup (overlapping with #40798)
+#     - PR #40792 (OPEN) — k8v4 GQA decode optimization; faster, but not a
+#       K+1 spec-verify multi-query correctness fix.
 #
-#   For workloads where the agent fleet's total in-flight context dominates
-#   per-token latency (multi-tenant code review, long-doc analysis, RAG with
-#   many concurrent sessions), this is the deployable TQ3 path until upstream
-#   bundles the 5 Genesis fixes.
+#   Tracking issue vllm#40069 still lists "Speculative decoding / Eagle" as
+#   disabled or unverified for TurboQuant, which matches our local matrix.
 #
-# To run:
-#   docker compose -f dual/tq3-nomtp.yml up -d
+#   We attempted a partial stack on 2026-05-11:
+#     - marlin-pad (vllm#40361)
+#     - PR #40798 `gpu_model_runner.py` ONLY (workspace pre-allocation)
+#     - PR #40914 K+1 dispatch block manually rebased onto post-#41434 main
+#
+#   Result: PR #40914 was not just insufficient here, it was worse than
+#   stock nightly. Enforce-eager and the output-buffer epilogue fix did not
+#   change the `!`-flood. With #40914 removed, tool-prefill and multi-turn
+#   recovered, but TQ3/TQ4/k8v4 + MTP all still failed long-context needles
+#   with first-word repetition. TQ3 with MTP disabled passes all checks, so
+#   this is an MTP x TurboQuant multi-query bug, not TQ precision.
+#
+# Deployable alternatives without Genesis:
+#   - dual/tq3-nomtp.yml  ← validated: 1.73M KV pool, 6.59× concurrency,
+#                            verify-stress all pass, no MTP acceleration
+#   - dual/int8.yml       ← shipping baseline: 605K KV pool, 2.31×, MTP working
+#
+# Deployable alternative WITH Genesis:
+#   - dual/tq3-mtp-genesis.yml  ← uses the full P64/P65/P66/P68/P69 stack
+#                                  via Genesis modular package
+#
+# Drop the tombstone only when an upstream P67-equivalent fix lands and
+# passes our verify-stress matrix across TQ3/TQ4/k8v4 + MTP.
+# ===========================================================================
+# Run (only when all 5 upstream fixes are available):
+#   docker compose -f dual/tq3-mtp.yml up -d
 # ===========================================================================
 # Hardware metadata (parsed by scripts/preflight.sh):
 # Requires-min-vram-gb: 24
@@ -42,16 +69,16 @@
 # Requires-min-gpu-count: 2
 # Tensor-parallel: 2
 services:
-  vllm-qwen36-27b-dual-int8-tq3-nomtp:
+  vllm-qwen36-27b-dual-int8-tq3:
     # Same vLLM nightly as gemma-4-31b/vllm/compose/dual/int8-tq3.yml — 2026-05-08
     # cut, post Gemma 4 MTP merge + INT8 PTH KV path (vllm#40391). Pin matches
     # so head-to-head TPS deltas reflect model intrinsics, not vLLM-version
     # drift between Qwen and Gemma legs.
     image: ${VLLM_IMAGE:-vllm/vllm-openai:nightly-${VLLM_NIGHTLY_SHA}}
-    container_name: "${ESTATE_CONTAINER:-vllm-qwen36-27b-dual-int8-tq3-nomtp}"
+    container_name: "${ESTATE_CONTAINER:-vllm-qwen36-27b-dual-int8-tq3}"
     restart: ${CLUB3090_RESTART:-unless-stopped}
     ports:
-      - "${BIND_HOST:-0.0.0.0}:${ESTATE_PORT:-${PORT:-8014}}:8000"
+      - "${BIND_HOST:-0.0.0.0}:${ESTATE_PORT:-${PORT:-8013}}:8000"
     volumes:
       - ${MODEL_DIR:-../../../../../../models-cache}:/root/.cache/huggingface
       # Reuse the same torch.compile + Triton kernel caches as dual.yml so
@@ -64,21 +91,13 @@ services:
       # TP=2 on AutoRound W4A16 (drops out when upstream merges).
       - ../../../patches/vllm-marlin-pad/marlin.py:/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/linear/mixed_precision/marlin.py:ro
       - ../../../patches/vllm-marlin-pad/MPLinearKernel.py:/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/linear/mixed_precision/MPLinearKernel.py:ro
-      # vLLM PR #40798 overlay — TurboQuant share decode scratch workspace
-      # across layers + reserve max workspace before cudagraph lock.
-      # Bug: vllm-issue#41565 / #41726 / #40420.
-      # WE INTENTIONALLY DO NOT MOUNT THE PR's turboquant_attn.py — that
-      # file in PR #40798's branch is pre-#41434 and would revert the
-      # merged `.tolist()` → CPU-resident-metadata fixes, reintroducing
-      # "Cannot copy CPU/CUDA during cudagraph capture" crashes. We keep
-      # nightly's turboquant_attn.py (which has #41434 fixes) and only
-      # mount the workspace-pre-allocation deltas from PR #40798's other
-      # 2 files. See ../../../patches/vllm-pr40798-rebased/README.md.
-      # NOT mounting PR #40798's triton_turboquant_decode.py either — it's
-      # also pre-#41434 and has the old function signature without the
-      # `buf_holder` kwarg that nightly's turboquant_attn.py now passes.
-      # Only the workspace-pre-allocation logic in gpu_model_runner.py is
-      # used; nightly already has the kernel + caller for the rest.
+      # ⚠️ DEBUG ROUND-5 (2026-05-11): test Sander's P65 mechanism cleanly.
+      # PR #40914 K+1 dispatch DROPPED — that overlay intercepts spec-verify
+      # batches with a synthetic-seq_lens path that's broken even in eager.
+      # P65's real mechanism: let K+1 batches fall through to the stock
+      # _prefill_attention per-request continuation branch (which we get
+      # by default in nightly). Plus VLLM_ENFORCE_EAGER=1 to take the
+      # cudagraph path off the table entirely.
       - ../../../patches/vllm-pr40798-rebased/v1/worker/gpu_model_runner.py:/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_model_runner.py:ro
       # vLLM PR #35936 required-tool fallback (drop when upstream lands).
       # vLLM PR #35936 required-tool fallback — sidecar pattern (drop when upstream lands).
@@ -101,7 +120,10 @@ services:
       - ../../../patches/froggeric-chat-template/chat_template.jinja:/etc/qwen-froggeric-chat-template.jinja:ro
     environment:
       - NVIDIA_VISIBLE_DEVICES=${ESTATE_GPUS:-${NVIDIA_VISIBLE_DEVICES:-all}}
+      - VLLM_ENFORCE_EAGER=1
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
+      - HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-${OFFLINE:-0}}
+      - TRANSFORMERS_OFFLINE=${TRANSFORMERS_OFFLINE:-${OFFLINE:-0}}
       - VLLM_WORKER_MULTIPROC_METHOD=spawn
       - NCCL_CUMEM_ENABLE=0
       - NCCL_P2P_DISABLE=1
@@ -172,6 +194,8 @@ services:
       # at time of writing). Higher n re-uses the same MTP layer for the
       # extra draft steps and emits a vLLM warning about reduced acceptance
       # rate. Use SPEC_N_MAX=4 to A/B against Gemma's n=4.
+      - --speculative-config
+      - '{"method":"mtp","num_speculative_tokens":${SPEC_N_MAX:-3}}'
       - --override-generation-config
       - '{"temperature":${TEMP:-${TEMPERATURE:-0.6}},"top_p":${TOP_P:-0.95},"top_k":${TOP_K:-20},"min_p":${MIN_P:-0.0},"repetition_penalty":${REPEAT_PENALTY:-1.0}}'
       - --host

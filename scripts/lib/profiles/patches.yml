@@ -12,6 +12,8 @@ schema_version: 1
 # not add new compose wiring decisions to the boolean block.
 patches:
   - id: qwen-sglang-autoround-fused-bf16
+    deprecated_on: "2026-06-05"
+    deprecation_reason: "SGLang path parked; no functional compose uses it (#254)."
     model: [qwen3.6-27b]
     files:
       - models/qwen3.6-27b/sglang/patches/patch_sglang_autoround_fused_bf16.py
@@ -33,6 +35,8 @@ patches:
     status: suspect
 
   - id: qwen-sglang-eagle3
+    deprecated_on: "2026-06-05"
+    deprecation_reason: "SGLang path parked; no functional compose uses it (#254)."
     model: [qwen3.6-27b]
     files:
       - models/qwen3.6-27b/sglang/patches/patch_sglang_eagle3.py
@@ -60,18 +64,6 @@ patches:
     load_bearing_when:
       - composes:
           - vllm/dual
-          - vllm/dual-turbo
-          - vllm/dual-dflash
-          - vllm/dual-dflash-noviz
-          - vllm/dual-bf16
-          - vllm/dual-int8
-          - vllm/dual-tq3-mtp
-          - vllm/dual-tq3-mtp-genesis
-          - vllm/dual-tq3-nomtp
-          - vllm/dual-carnice-bf16mtp
-          - vllm/dual-qwopus-bf16mtp
-          - vllm/dual4
-          - vllm/dual4-dflash
         reason: "AutoRound INT4 TP shards can fall below Marlin's output-feature tile floor."
         evidence: "models/qwen3.6-27b/vllm/patches/vllm-marlin-pad/README.md; models/qwen3.6-27b/INTERNALS.md#dual-card-the-marlin-pad-sub-tile-n-patch-vllm40361"
     delivery:               # DEPRECATED/READ-ONLY (test-only) — see header
@@ -106,25 +98,8 @@ patches:
       - models/qwen3.6-27b/vllm/patches/vllm-pr35936-required-fallback
     load_bearing_when:
       - composes:
-          - vllm/default
-          - vllm/tools-text
           - vllm/minimal
-          - vllm/long-text
-          - vllm/long-text-no-mtp
-          - vllm/long-vision
-          - vllm/bounded-thinking
           - vllm/dual
-          - vllm/dual-turbo
-          - vllm/dual-dflash
-          - vllm/dual-dflash-noviz
-          - vllm/dual-bf16
-          - vllm/dual-int8
-          - vllm/dual-tq3-mtp
-          - vllm/dual-tq3-nomtp
-          - vllm/dual-carnice-bf16mtp
-          - vllm/dual-qwopus-bf16mtp
-          - vllm/dual4
-          - vllm/dual4-dflash
         reason: "Qwen3-Coder tool_choice=required returns empty tool_calls[] unless the configured parser fallback is honored."
         evidence: "docs/UPSTREAM.md#35936 row; models/qwen3.6-27b/vllm/patches/vllm-pr35936-required-fallback/README.md"
     delivery:               # DEPRECATED/READ-ONLY (test-only) — see header
@@ -152,6 +127,8 @@ patches:
     status: verified
 
   - id: qwen-vllm-pr40798-rebased
+    deprecated_on: "2026-06-05"
+    deprecation_reason: "negative-local-result; abandoned, no functional compose uses it (#254)."
     model: [qwen3.6-27b]
     files:
       - models/qwen3.6-27b/vllm/patches/vllm-pr40798-rebased
@@ -173,6 +150,8 @@ patches:
     status: suspect
 
   - id: qwen-vllm-pr40914-k1-only
+    deprecated_on: "2026-06-05"
+    deprecation_reason: "negative-local-result; superseded, no functional compose uses it (#254)."
     model: [qwen3.6-27b]
     files:
       - models/qwen3.6-27b/vllm/patches/vllm-pr40914-k1-only
@@ -199,26 +178,8 @@ patches:
       - models/qwen3.6-27b/vllm/patches/local/qwen3coder_tool_parser_deferred_commit.py
     load_bearing_when:
       - composes:
-          - vllm/default
-          - vllm/tools-text
           - vllm/minimal
-          - vllm/long-text
-          - vllm/long-text-no-mtp
-          - vllm/long-vision
-          - vllm/bounded-thinking
           - vllm/dual
-          - vllm/dual-turbo
-          - vllm/dual-dflash
-          - vllm/dual-dflash-noviz
-          - vllm/dual-bf16
-          - vllm/dual-int8
-          - vllm/dual-tq3-mtp
-          - vllm/dual-tq3-mtp-genesis
-          - vllm/dual-tq3-nomtp
-          - vllm/dual-carnice-bf16mtp
-          - vllm/dual-qwopus-bf16mtp
-          - vllm/dual4
-          - vllm/dual4-dflash
         reason: "Qwen3-Coder streaming parser can silence SSE when prose mentions literal <tool_call>."
         evidence: "docs/UPSTREAM.md#qwen3coder-tool-parser-sse-silence-on-prose-tool_call"
     delivery:
@@ -229,16 +190,6 @@ patches:
       - composes:
           - vllm/minimal
           - vllm/dual
-          - vllm/dual-dflash
-          - vllm/dual-dflash-noviz
-          - vllm/dual-bf16
-          - vllm/dual-int8
-          - vllm/dual-tq3-mtp
-          - vllm/dual-tq3-nomtp
-          - vllm/dual-carnice-bf16mtp
-          - vllm/dual-qwopus-bf16mtp
-          - vllm/dual4
-          - vllm/dual4-dflash
         issue: "Known current coverage boundary from club-3090#72/#145 class: these composes do not invoke the local sidecar today."
     delivery_mechanism: python_sidecar
     delivery_spec:
@@ -264,19 +215,6 @@ patches:
       - models/qwen3.6-27b/vllm/patches/vllm-pr41800-truncate-prompt-tokens
     load_bearing_when:
       - composes:
-          - vllm/default
-          - vllm/long-text
-          - vllm/long-text-no-mtp
-          - vllm/long-vision
-          - vllm/bounded-thinking
-          - vllm/dual-turbo
-          - vllm/dual-dflash
-          - vllm/dual-dflash-noviz
-          - vllm/dual-int8
-          - vllm/dual-tq3-mtp
-          - vllm/dual-tq3-mtp-genesis
-          - vllm/dual-tq3-nomtp
-          - vllm/dual4-dflash
         reason: "Pre-d5b31c95 engine pins reject agent clients that send truncate_prompt_tokens."
         evidence: "docs/UPSTREAM.md#41800 row; models/qwen3.6-27b/vllm/patches/vllm-pr41800-truncate-prompt-tokens/README.md"
     delivery:               # DEPRECATED/READ-ONLY (test-only) — see header
@@ -309,24 +247,8 @@ patches:
       - models/qwen3.6-27b/vllm/patches/froggeric-chat-template/chat_template.jinja
     load_bearing_when:
       - composes:
-          - vllm/default
-          - vllm/tools-text
           - vllm/minimal
-          - vllm/long-text
-          - vllm/long-text-no-mtp
-          - vllm/long-vision
-          - vllm/bounded-thinking
           - vllm/dual
-          - vllm/dual-turbo
-          - vllm/dual-dflash
-          - vllm/dual-dflash-noviz
-          - vllm/dual-bf16
-          - vllm/dual-int8
-          - vllm/dual-tq3-mtp
-          - vllm/dual-tq3-mtp-genesis
-          - vllm/dual-tq3-nomtp
-          - vllm/dual4
-          - vllm/dual4-dflash
         reason: "Default Qwen3.6 chat template mis-handles tool-call XML / reasoning delimiters / streaming (the #145 silent-break class); the froggeric override fixes 7 default-template defects and is behavior-critical for every tool/agent compose. Carnice/Qwopus are intentional excludes (they ship their own carnice template)."
         evidence: "models/qwen3.6-27b/vllm/patches/froggeric-chat-template/PROVENANCE.md; docs/UPSTREAM.md (froggeric template re-eval #150 / v19 adopted PR #157)"
     delivery:               # DEPRECATED/READ-ONLY (test-only) — see header
@@ -355,12 +277,13 @@ patches:
     status: verified
 
   - id: qwen-carnice-chat-template
+    deprecated_on: "2026-06-05"
+    deprecation_reason: "carnice fine-tune compose archived to _archive/; orphaned (#254)."
     model: [qwen3.6-27b]
     files:
       - models/qwen3.6-27b/vllm/patches/carnice-chat-template.jinja
     load_bearing_when:
       - composes:
-          - vllm/dual-carnice-bf16mtp
         reason: "The Carnice v2 INT4 Recipe-D BF16-MTP weights ship a default chat template that mis-emits tool calls; the vendored carnice .jinja makes Carnice output JSON tool calls matched to `--tool-call-parser hermes`. It is behavior-critical (the #145 silent-break class) and was previously invisible to patch-attribution (no patches.yml id / delivery_mechanism / drift_guard). Unlike froggeric it is NOT wired via `--chat-template`: it is bind-mounted OVER the model dir's chat_template.jinja and vLLM auto-loads it (wired_at: volumes only). Qwopus is NOT covered here — it ships its chat_template embedded in tokenizer_config.json, not a separate .jinja."
         evidence: "models/qwen3.6-27b/vllm/compose/dual/carnice-bf16mtp/bf16-mtp.yml volumes block + header; docs/UPSTREAM.md (carnice recipe-D)"
     delivery:               # DEPRECATED/READ-ONLY (test-only) — see header
@@ -425,6 +348,8 @@ patches:
     status: unverified
 
   - id: gemma-vllm-pr41800-truncate-prompt-tokens
+    deprecated_on: "2026-06-05"
+    deprecation_reason: "merged upstream + redundant on stock v0.22.0 (#254)."
     model: [gemma-4-31b]
     files:
       - models/gemma-4-31b/vllm/patches/vllm-pr41800-truncate-prompt-tokens
@@ -450,6 +375,8 @@ patches:
     status: verified
 
   - id: gemma-vllm-gemma4-fp8-ampere
+    deprecated_on: "2026-06-05"
+    deprecation_reason: "fp8 KV is hardware-dead on Ampere sm_86; never shippable here (#254)."
     model: [gemma-4-31b]
     files:
       - models/gemma-4-31b/vllm/patches/vllm-gemma4-fp8-ampere
@@ -508,6 +435,8 @@ patches:
 
 
   - id: gemma-vllm-perheadkv-hybridpage-fix
+    deprecated_on: "2026-06-05"
+    deprecation_reason: "superseded by gemma-vllm-pr40391-rebased (#254)."
     model: [gemma-4-31b]
     files:
       - models/gemma-4-31b/vllm/patches/vllm-perheadkv-hybridpage-fix
@@ -529,6 +458,8 @@ patches:
     status: suspect
 
   - id: gemma-vllm-pr40391-perheadkv
+    deprecated_on: "2026-06-05"
+    deprecation_reason: "superseded by gemma-vllm-pr40391-rebased (#254)."
     model: [gemma-4-31b]
     files:
       - models/gemma-4-31b/vllm/patches/vllm-pr40391-perheadkv
@@ -621,6 +552,8 @@ patches:
 
   - &genesis_env_patch
     id: genesis-p4
+    deprecated_on: "2026-06-05"
+    deprecation_reason: "Genesis env-gated patch; Genesis path retired/on-hold upstream, no live compose uses it (#254). Anchor-inherited by all genesis-p* entries."
     model: [qwen3.6-27b]
     files: []
     genesis_env: GENESIS_ENABLE_P4

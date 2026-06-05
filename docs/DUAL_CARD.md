@@ -147,17 +147,9 @@ Without it, vLLM falls back silently to baseline bf16 decode (~25 TPS, not 125).
 
 ## Common pitfalls (dual-card specifics)
 
-### Marlin pad-sub-tile-n mount dependency
+### Marlin pad-sub-tile-n patch (vendored, auto-applied)
 
-The dual variants currently mount `/opt/ai/engines/vllm/primary/vllm/model_executor/kernels/linear/mixed_precision/marlin.py` (and one neighbor) read-only into the container. This is our patched fork of [vllm#40361](https://github.com/vllm-project/vllm/pull/40361) — required for AutoRound W4A16 at TP=2 where output-dim shards fall below 64. **You need to clone vLLM source to `/opt/ai/engines/vllm/primary/`** for these composes to boot. When the upstream PR lands, we'll drop the mount.
-
-If you don't have `/opt/ai/engines/vllm/primary/`:
-
-```bash
-sudo mkdir -p /opt/ai && sudo chown $USER /opt/ai
-git clone https://github.com/vllm-project/vllm.git /opt/ai/engines/vllm/primary
-cd /opt/ai/engines/vllm/primary && git checkout main
-```
+The dual variants need a one-file patch — our fork of [vllm#40361](https://github.com/vllm-project/vllm/pull/40361) — for AutoRound W4A16 at TP=2, where output-dim shards fall below 64. **It's vendored in the repo and mounted automatically:** `models/qwen3.6-27b/vllm/patches/vllm-marlin-pad/{marlin.py,MPLinearKernel.py}` is overlaid read-only into the stock vLLM image by each dual compose. **No vLLM source clone, no extra setup** — it's in place the moment you launch a dual variant. When the upstream PR lands we'll drop the overlay.
 
 ### NVLink auto-detection
 
@@ -193,9 +185,9 @@ If you're solo-using on dual, you're paying for hardware that mostly sits idle o
 ## Quick start
 
 ```bash
-# 1. Setup (downloads model, clones Genesis + vllm-src, ~20 min cold)
+# 1. Setup (downloads model + Genesis patches, ~20 min cold). The dual marlin-pad
+#    overlay is vendored in-repo and auto-mounted by the compose — no vLLM clone needed.
 bash scripts/setup.sh qwen3.6-27b
-git clone https://github.com/vllm-project/vllm.git /opt/ai/engines/vllm/primary    # required for dual variants
 
 # 2. Pick + boot via wizard (asks model + GPUs, projects VRAM budget, auto-picks TP=2 for matched 2× 3090)
 bash scripts/launch.sh
@@ -248,6 +240,16 @@ Code TPS held within bench variance across all 4 variants — no v0.20 regressio
 - **[Gemma 4 31B](../models/gemma-4-31b/)** — dual-card only on Ampere 24 GB (single-card boot OOMs even at 8K ctx; needs 32 GB+ per card). Two drafter paths (MTP via Google's official `gemma-4-31B-it-assistant` + DFlash via z-lab) × two KV strategies (bf16 / 32K vs INT8 PTH / 262K) + AWQ-4bit-weights variant. Genesis doesn't apply (Genesis patches are Qwen3-Next-specific).
 
 As more models land, they'll show up here with their dual-card compose set.
+
+---
+
+## Heads-up: multimodal & image/video models on dual cards
+
+Two lessons that generalize beyond the LLM composes above (learned wiring up Qwen3-Omni + scoping image generation on 2× 3090):
+
+- **Size the *full pipeline*, not the transformer.** Multimodal and diffusion models bundle a large **text encoder** (8–24 GB: T5-XXL, Qwen3-4B, Qwen3-VL-8B, Mistral-3-24B). A small quantized transformer can still blow a 24 GB card once the encoder + VAE + activations load — so an image model generally **won't co-reside** with an LLM on one card. Give it a dedicated card or **time-share** (run it when the LLM isn't).
+- **Reach full context with fp8/int8 KV on a single card before reaching for TP/PP.** On PCIe-no-NVLink, tensor/pipeline parallelism pays a per-layer cross-card cost; halving the KV (fp8 / int8) often gets a model to its **full native context on *one* card** with zero cross-card traffic — strictly better here. (Qwen3-Omni's thinker reached its full 65 K single-card via fp8 KV — no TP/PP needed.)
+- **Image/video generation → use ComfyUI on a freed card**, not the LLM stack. Sized model shortlist + the Open WebUI → ComfyUI UI pattern: [FAQ.md → Image & video generation](FAQ.md#image--video-generation).
 
 ---
 

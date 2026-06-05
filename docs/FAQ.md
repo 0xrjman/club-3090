@@ -149,6 +149,20 @@ AutoRound (Lorbus) gave us +9% TPS over AWQ on this model. GPTQ has a similar qu
 
 ---
 
+## Image & video generation
+
+### Can I generate images or video on the rig?
+
+Yes — but **not through the LLM stack.** The text models (Qwen3.6 / Gemma) and even **Qwen3-Omni generate text/speech only** (Omni adds *speech*, not images). For image/video **generation**, use **[ComfyUI](https://github.com/comfyanonymous/ComfyUI)** — the mature diffusion runtime (GGUF / NF4 / fp8 quants, LoRA, ControlNet, day-0 model support) — on a **free card** (these models want a dedicated 24 GB GPU, not co-residence with an LLM; see the next Q). For a unified UI, **[Open WebUI](https://github.com/open-webui/open-webui)** can drive both: chat against the LLM endpoints **and** trigger image gen via a ComfyUI backend.
+
+Open-weight models that fit one 3090 (run in ComfyUI): **FLUX.1-dev** (Q8 — aesthetic benchmark), **Qwen-Image** (best text-in-image), **FLUX.2-klein-4B** / **Z-Image-Turbo** (lighter/faster), **HiDream-I1**, **Ideogram-4** (top open quality, ~whole card). Video: **Cosmos3-Nano** / **LTX-2** are feasible on one card; **Wan2.2** / **HunyuanVideo-1.5** are tight. Worked-out shortlist + VRAM sizes: [`models/qwen3-omni-30b-a3b/vllm-omni/README.md`](../models/qwen3-omni-30b-a3b/vllm-omni/README.md).
+
+### Why does my image model OOM even though the transformer quant is small?
+
+The **text encoder.** Image models bundle a big one — FLUX.1 → T5-XXL (~5–8 GB), FLUX.2-klein / Z-Image → Qwen3-4B (~8 GB), Ideogram-4 → Qwen3-VL-8B, FLUX.2-*dev* → Mistral-3-24B. A "4 GB" transformer GGUF can still need **12–16 GB** once the encoder + VAE + activations load. **Always size the full pipeline, not just the transformer.** GGUF shrinks only the transformer; the encoder needs separate quant or CPU offload. (For diffusion, GGUF **Q5/Q6 ≈ near-lossless**, and FLUX-class tolerates Q4 well.)
+
+---
+
 ## Performance
 
 ### Why is single-card TPS lower than I expected?
@@ -353,6 +367,20 @@ Flags:
 You'll usually find out you're behind before you ask: `launch.sh` and `switch.sh` both run `preflight_repo_drift` at boot, which soft-warns when your local HEAD is behind `origin/master`, with the commit count + last-fetch age + the one-line fix. Opt out via `PREFLIGHT_NO_FETCH=1` for offline rigs.
 
 If your *Genesis tree* (not the repo) is out of sync — the pin in `setup.sh` moved but you didn't re-run setup — `preflight_genesis_pin` warns separately and tells you to run `setup.sh`. That was the failure mode behind [#32](https://github.com/noonghunna/club-3090/issues/32) and wispborne's `_register_op_once` crash.
+
+### How do I run fully offline / air-gapped (no Hugging Face access)?
+
+Even with the weights already on disk and `--model` pointed at a local path, vLLM/transformers still reach out to Hugging Face to resolve config/tokenizer metadata — so a sealed network makes startup hang or fail. Two things:
+
+1. **Set `OFFLINE=1`** (or the individual `HF_HUB_OFFLINE=1` / `TRANSFORMERS_OFFLINE=1`). Every vLLM compose passes these through to the container, default-off, so it's one flag:
+   ```bash
+   OFFLINE=1 docker compose -f <compose>.yml up    # or export it / put it in your .env
+   ```
+   With it set, vLLM uses local files only and never phones home.
+
+2. **Pre-download everything the compose loads — including gated drafters.** Speculative-decoding composes (`*-mtp.yml`, `dflash.yml`) also load an assistant/MTP drafter, often a **gated** repo (e.g. `google/gemma-4-12B-it-assistant`). If only the main model is local, boot will still try to fetch the drafter. Either grab it too (into `MODEL_DIR`, while you still have network), or drop the `--speculative-config` lines to run the main model alone.
+
+`MODEL_DIR` is the directory *containing* the model folder; the container serves `/root/.cache/huggingface/<MODEL_SUBDIR>`. On WSL2, keep weights on ext4 (not `/mnt/<drive>`) — see [WSL_SETUP.md](WSL_SETUP.md).
 
 ### My GPU isn't card 0 — how do I change it?
 
@@ -610,7 +638,7 @@ multi-GPU coordination."
 
 ## Quick recognition guide for common failure modes
 
-- **Container dies at boot with `GPTQ_MARLIN_MIN_THREAD_N (64) > out_features`** — dual-card vllm#40361 patch didn't apply. Confirm `/opt/ai/engines/vllm/primary/` exists with the patched marlin kernel files.
+- **Container dies at boot with `GPTQ_MARLIN_MIN_THREAD_N (64) > out_features`** — the dual-card vllm#40361 marlin-pad overlay didn't mount. It's vendored in-repo (`models/qwen3.6-27b/vllm/patches/vllm-marlin-pad/`) and mounted by the dual composes — launch via the compose (not a hand-rolled `docker run`) so the overlay is in place.
 - **Container dies during DFlash boot** — vllm#40334 dtype mismatch. Verify the compose has `--dtype bfloat16`.
 - **Tool calls return `<tool_call>` as plain text** — Genesis didn't apply. Check `Genesis Results: 27 applied` in logs (boot-time).
 - **OOM during prefill at 60K+ tokens** — single-card Cliff 2 (DeltaNet GDN forward). 60K is the closed envelope on `long-text.yml` (Balanced MTP) and `long-text-no-mtp.yml` (Max-context); >60K still hits the hardware-physical wall on 24 GB. For larger prompts: switch to dual-card TP=2 or llama.cpp + q4_0 KV.
