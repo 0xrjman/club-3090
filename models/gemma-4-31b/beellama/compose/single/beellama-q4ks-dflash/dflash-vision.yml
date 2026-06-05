@@ -1,0 +1,66 @@
+# ===========================================================================
+# Profile (at-a-glance):
+#   Model:     Gemma-4-31B-it (Unsloth Q4_K_S GGUF target + Anbeeld DFlash drafter)
+#   Engine:    beellama.cpp (Anbeeld llama.cpp fork — DFlash spec-dec + SWA windowed KV)
+#   Topology:  Single 5090 (TP=1, sm_120)
+#   Drafter:   DFlash (--spec-type dflash, Anbeeld DFlash-IQ4_XS GGUF, adaptive draft-max)
+#   KV:        q5_0 K + q4_1 V
+#   Vision:    ✅ yes (mmproj-BF16 mounted, CPU-offloaded)
+#   Template:  native (GGUF-embedded) via --jinja
+#   Max ctx:   128000 default (262144 via CTX_SIZE override)
+#   Status:    🌟 Version of beellama/gemma-dflash with vision support
+# ---------------------------------------------------------------------------
+# Gemma-4-31B on beellama.cpp — single 5090, Q4_K_S + DFlash (Anbeeld IQ4_XS draft),
+# q5_0/q4_1 KV, with mmproj-BF16 vision encoder (CPU-offloaded).
+#
+# Override defaults via .env or shell:
+#   MODEL_DIR              host dir to mount as /models  (default: ../../../../../../models-cache)
+#   GGUF_FILE             target GGUF under /models
+#   DRAFT_FILE            DFlash draft GGUF under /models
+#   MMPROJ_FILE           mmproj GGUF for vision        (default: unsloth/gemma-4-31B-it-GGUF/mmproj-BF16.gguf)
+#   CTX_SIZE              KV pool size                  (default: 128000)
+#   PORT                  host port                     (default: 8020)
+#   REASONING             thinking gate                 (default: off)
+services:
+  beellama-gemma4-31b-vision:
+    image: ${BEELLAMA_IMAGE:-ghcr.io/anbeeld/beellama.cpp:server-cuda13-v0.3.1}
+    container_name: "${ESTATE_CONTAINER:-beellama-gemma4-31b-vision}"
+    restart: unless-stopped
+    ports:
+      - "${ESTATE_PORT:-${PORT:-8020}}:8080"
+    volumes:
+      - "${MODEL_DIR:-../../../../../../models-cache}:/models:ro"
+    command: >-
+      --host 0.0.0.0
+      --port 8080
+      --alias ${MODEL_ALIAS:-qwen3.6}
+      -m /models/${GGUF_FILE:-gemma-4-31b-gguf/unsloth-q4ks/gemma-4-31B-it-Q4_K_S.gguf}
+      --spec-draft-model /models/${DRAFT_FILE:-gemma-4-31b-gguf/anbeeld-dflash-iq4xs/gemma4-31b-it-dflash-IQ4_XS.gguf}
+      --spec-type dflash
+      --spec-dflash-cross-ctx ${CROSS_CTX:-1024}
+      -ngl all
+      --spec-draft-ngl all
+      --ctx-size ${CTX_SIZE:-262144}
+      -b ${BATCH_SIZE:-2048}
+      -ub ${UBATCH_SIZE:-512}
+      -np ${NP:-1}
+      --kv-unified
+      --cache-type-k ${KV_TYPE_K:-q5_0}
+      --cache-type-v ${KV_TYPE_V:-q4_1}
+      --flash-attn on
+      --cache-ram 0
+      --no-host
+      --jinja
+      --mmproj /models/${MMPROJ_FILE:-gemma-4-31b-gguf/unsloth-q4ks/mmproj-BF16.gguf}
+      --reasoning ${REASONING:-on}
+      --temp ${TEMP:-${TEMPERATURE:-1.0}}
+      --top-k ${TOP_K:-64}
+      --top-p ${TOP_P:-0.95}
+      --min-p ${MIN_P:-0.0}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${ESTATE_GPUS:-${CUDA_VISIBLE_DEVICES:-0}}"]
+              capabilities: [gpu]

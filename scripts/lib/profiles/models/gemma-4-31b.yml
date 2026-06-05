@@ -82,6 +82,15 @@ weights:
     engine: beellama
     kind: gguf
     verify_glob: "*.gguf"
+  redhat-nvfp4:
+    path: RedHatAI/gemma-4-31B-it-NVFP4
+    local_subdir: RedHatAI/gemma-4-31B-it-NVFP4
+    size_gb: 21.7
+    format: nvfp4
+    status: experimental
+    engine: vllm
+    kind: main
+    verify_glob: "*.safetensors"
   beellama-q8kxl-dflash:
     path: gemma-4-31b-gguf/unsloth-q8kxl
     local_subdir: gemma-4-31b-gguf/unsloth-q8kxl

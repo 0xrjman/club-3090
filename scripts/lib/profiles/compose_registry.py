@@ -518,7 +518,38 @@ COMPOSE_REGISTRY = {
         status_note="APEX-MTP community MoE GGUF — eval-only bring-up lane, not yet validated.",
     ),
 
-    # Gemma 4 31B, vLLM. Lean v0.21.0 set: bf16 default, int8 long-context, single-card fp8 risk path.
+    # Gemma 4 31B, vLLM. Single 5090 INT8 PTH (tp=1) + dual TP=2 variants.
+    # Gemma 4 31B, vLLM. Single 5090 BF16 MTP (tp=1) + dual TP=2 variants.
+    "vllm/gemma-nvfp4-5090": _entry(
+        model="gemma-4-31b", weights_variant="redhat-nvfp4", workload="fast-chat",
+        engine="vllm-gemma-stable", drafter="gemma-it-assistant", kv_format="fp8",
+        tp=1, max_ctx=65536, max_num_seqs=1, mem_util=0.95,
+        compose_path="models/gemma-4-31b/vllm/compose/single/redhat-nvfp4/fp8-mtp.yml",
+        default_port=8020,
+        kvcalc_key="SKIP",
+        status="experimental",
+        status_note="5090 single-card (sm_120) vLLM NVFP4 MTP — RedHatAI NVFP4 weights, Blackwell FP4 TC native, Google MTP drafter, --alias qwen3.6. First NVFP4 compose on club-3090.",
+    ),
+    "vllm/gemma-bf16-5090": _entry(
+        model="gemma-4-31b", weights_variant="autoround-int4", workload="fast-chat",
+        engine="vllm-gemma-stable", drafter="gemma-it-assistant", kv_format="bf16",
+        tp=1, max_ctx=65536, max_num_seqs=1, mem_util=0.95,
+        compose_path="models/gemma-4-31b/vllm/compose/single/autoround-int4/bf16-mtp-5090.yml",
+        default_port=8022,
+        kvcalc_key="SKIP",
+        status="experimental",
+        status_note="5090 single-card (sm_120) vLLM Gemma-4 BF16 MTP — ~65K ctx, Google MTP drafter, --alias qwen3.6. Based on @apnar's 159/215 t/s benchmark.",
+    ),
+    "vllm/gemma-int8-5090": _entry(
+        model="gemma-4-31b", weights_variant="autoround-int4", workload="fast-chat",
+        engine="vllm-gemma-stable", drafter="gemma-it-assistant", kv_format="int8_per_token_head",
+        tp=1, max_ctx=262144, max_num_seqs=1, mem_util=0.92,
+        compose_path="models/gemma-4-31b/vllm/compose/single/autoround-int4/int8-5090.yml",
+        default_port=8021,
+        kvcalc_key="SKIP",
+        status="experimental",
+        status_note="5090 single-card (sm_120, 32 GB) vLLM Gemma-4 INT8 PTH — 262K ctx, Google MTP drafter, --alias qwen3.6, port 8021. Requires sm_120 GPU. Not validated.",
+    ),
     "vllm/gemma-mtp-tp1": _entry(
         model="gemma-4-31b", weights_variant="autoround-int4", workload="fast-chat",
         engine="vllm-gemma-stable", drafter="gemma-it-assistant", kv_format="fp8_e4m3",
@@ -617,13 +648,37 @@ COMPOSE_REGISTRY = {
     "beellama/gemma-dflash": _entry(
         model="gemma-4-31b", weights_variant="beellama-q4ks-dflash", workload="fast-chat",
         engine="beellama-local", drafter="anbeeld-gemma-dflash", kv_format="q5_0",
-        tp=1, max_ctx=128000, max_num_seqs=1, mem_util=None,
+        tp=1, max_ctx=262144, max_num_seqs=1, mem_util=None,
         compose_path="models/gemma-4-31b/beellama/compose/single/beellama-q4ks-dflash/dflash.yml",
-        default_port=8061,
+        default_port=8020,
         kvcalc_key="SKIP",
         status="caveats",
         status_note="Single-GPU default — the only viable fast single-card Gemma-4 path on Ampere. Launchers inject Anbeeld's official beellama.cpp server-cuda-v0.3.0 image (sm_86/89 = 3090/4090); sm_89 compiled-not-validated on club-3090's 3090-only rig. 5090/sm_120: prefix BEELLAMA_IMAGE=ghcr.io/noonghunna/beellama-cpp:multiarch-v0.3.0-efe856397 (sm_120 compiled-not-validated). DFlash prose is net-positive on tok/s (+28–31% vs no-spec, re-tested 2026-06-03; earlier 'prose regression' RETRACTED — AR over-read + wrong baseline); re-point to mainline llama.cpp#23398 Gemma-4 MTP when it merges — docs/UPSTREAM.md.",
     ),
+    "beellama/gemma-dflash-vision": _entry(
+        model="gemma-4-31b", weights_variant="beellama-q4ks-dflash", workload="vision-coding",
+        engine="beellama-local", drafter="anbeeld-gemma-dflash", kv_format="q5_0",
+        tp=1, max_ctx=262144, max_num_seqs=1, mem_util=None,
+        compose_path="models/gemma-4-31b/beellama/compose/single/beellama-q4ks-dflash/dflash-vision.yml",
+        default_port=8020,
+        kvcalc_key="SKIP",
+        status="experimental",
+        status_note="beellama/gemma-dflash + mmproj-BF16 vision encoder (CPU-offloaded). 5090 single-card.",
+    ),
+    # Gemma-4-31B beellama.cpp DFlash — single 5090 (32 GB, 262K, v0.3.1 CUDA13).
+    # Custom 5090-specific variant: full native ctx, --alias qwen3.6, port 8020.
+    # Image pins v0.3.1 CUDA13 for sm_120 native support. Requires sm_120 GPU.
+    "beellama/gemma-dflash-5090": _entry(
+        model="gemma-4-31b", weights_variant="beellama-q4ks-dflash", workload="fast-chat",
+        engine="beellama-local", drafter="anbeeld-gemma-dflash", kv_format="q5_0",
+        tp=1, max_ctx=262144, max_num_seqs=1, mem_util=None,
+        compose_path="models/gemma-4-31b/beellama/compose/single/beellama-q4ks-dflash/dflash-5090.yml",
+        default_port=8020,
+        kvcalc_key="SKIP",
+        status="experimental",
+        status_note="Single 5090 (32 GB, sm_120) beellama Gemma-4 DFlash — 262K ctx, Q4_K_S + IQ4_XS draft, v0.3.1 CUDA13 image, --alias qwen3.6. Requires sm_120 GPU. Not validated on club-3090's Ampere rig.",
+    ),
+
     # Dual-card beellama Gemma-4 (layer-split, 262K) — PARKED upstream-gated 2026-05-31.
     # Boots + recalls 262K fine, but DFlash spec-dec is broken on multi-GPU in our pinned
     # build (07ac3ce): drafter decode fails, accept 0.357, ~24/38 TPS; --device-draft crashes.
