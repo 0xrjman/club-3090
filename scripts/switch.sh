@@ -835,6 +835,10 @@ quick_launch_menu() {
     exit 0
   fi
   # Number → slug
+  # Quick-launch menu is an explicit user choice → auto-force to bypass
+  # the status gate (experimental/caveats). The user already saw the
+  # status markers in the menu and consciously picked.
+  FORCE=1
   if [[ "$choice" =~ ^[0-9]+$ ]]; then
     local idx=$((choice - 1))
     if [[ $idx -ge 0 && $idx -lt ${#menu[@]} ]]; then

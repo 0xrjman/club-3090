@@ -2,12 +2,12 @@
 # Profile (at-a-glance):
 #   Model:     Gemma-4-31B-it (Unsloth Q4_K_S GGUF target + Anbeeld DFlash drafter)
 #   Engine:    beellama.cpp (Anbeeld llama.cpp fork — DFlash spec-dec + SWA windowed KV)
-#   Topology:  Single 5090 (TP=1, sm_120)
+#   Topology:  Single 5090 (32 GB, sm_120)
 #   Drafter:   DFlash (--spec-type dflash, Anbeeld DFlash-IQ4_XS GGUF, adaptive draft-max)
 #   KV:        q5_0 K + q4_1 V
 #   Vision:    ✅ yes (mmproj-BF16 mounted, CPU-offloaded)
 #   Template:  native (GGUF-embedded) via --jinja
-#   Max ctx:   128000 default (262144 via CTX_SIZE override)
+#   Max ctx:   262144
 #   Status:    🌟 Version of beellama/gemma-dflash with vision support
 # ---------------------------------------------------------------------------
 # Gemma-4-31B on beellama.cpp — single 5090, Q4_K_S + DFlash (Anbeeld IQ4_XS draft),
@@ -18,18 +18,21 @@
 #   GGUF_FILE             target GGUF under /models
 #   DRAFT_FILE            DFlash draft GGUF under /models
 #   MMPROJ_FILE           mmproj GGUF for vision        (default: unsloth/gemma-4-31B-it-GGUF/mmproj-BF16.gguf)
-#   CTX_SIZE              KV pool size                  (default: 128000)
+#   CTX_SIZE              KV pool size                  (default: 262144)
 #   PORT                  host port                     (default: 8020)
-#   REASONING             thinking gate                 (default: off)
+#   REASONING             thinking gate                 (default: on)
+#   NGL                   --gpu-layers                    (default: 999)
 services:
-  beellama-gemma4-31b-vision:
+  beellama-gemma4-31b-dflash-vision:
     image: ${BEELLAMA_IMAGE:-ghcr.io/anbeeld/beellama.cpp:server-cuda13-v0.3.1}
-    container_name: "${ESTATE_CONTAINER:-beellama-gemma4-31b-vision}"
+    container_name: "${ESTATE_CONTAINER:-beellama-gemma4-31b-dflash-vision}"
     restart: unless-stopped
     ports:
       - "${ESTATE_PORT:-${PORT:-8020}}:8080"
     volumes:
       - "${MODEL_DIR:-../../../../../../models-cache}:/models:ro"
+    environment:
+      - CUDA_MANAGED_FORCE_DEVICE_ALLOC=1
     command: >-
       --host 0.0.0.0
       --port 8080
@@ -38,8 +41,8 @@ services:
       --spec-draft-model /models/${DRAFT_FILE:-gemma-4-31b-gguf/anbeeld-dflash-iq4xs/gemma4-31b-it-dflash-IQ4_XS.gguf}
       --spec-type dflash
       --spec-dflash-cross-ctx ${CROSS_CTX:-1024}
-      -ngl all
-      --spec-draft-ngl all
+      -ngl ${NGL:-999}
+      --spec-draft-ngl ${NGL:-999}
       --ctx-size ${CTX_SIZE:-262144}
       -b ${BATCH_SIZE:-2048}
       -ub ${UBATCH_SIZE:-512}
@@ -57,6 +60,7 @@ services:
       --top-k ${TOP_K:-64}
       --top-p ${TOP_P:-0.95}
       --min-p ${MIN_P:-0.0}
+      --no-mmap
     deploy:
       resources:
         reservations:
