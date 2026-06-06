@@ -54,7 +54,7 @@
 
 services:
   vllm-qwen36-27b-nvfp4-mtp:
-    image: ${VLLM_IMAGE:-vllm/vllm-openai:v0.22.0}
+    image: ${VLLM_IMAGE:-vllm/vllm-openai:v0.22.1}
     container_name: "${ESTATE_CONTAINER:-vllm-qwen36-27b-nvfp4-mtp}"
     restart: unless-stopped
     ports:

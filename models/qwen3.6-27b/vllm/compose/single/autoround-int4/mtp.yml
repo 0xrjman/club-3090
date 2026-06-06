@@ -1,0 +1,119 @@
+# ===========================================================================
+# Profile (at-a-glance):
+#   Model:     Qwen3.6-27B (Lorbus AutoRound INT4 + BF16 mtp.fc preserved)
+#   Engine:    vLLM v0.22.0 (stable, no Genesis patches needed)
+#   Topology:  Single 5090 (TP=1, sm_120 Blackwell, 32 GB)
+#   Drafter:   MTP n=3 (embedded MTP head in AutoRound weights)
+#   KV:        fp8_e4m3 (Blackwell-native, higher precision than fp8_e5m2)
+#   Vision:    yes (chat template + tool calls)
+#   Max ctx:   262K (0.94 safe ceiling on 5090)
+#   Max seqs:  1 (single request — max throughput)
+#   Genesis:   N/A — stock vLLM v0.22.0, no patches needed
+#   Status:    ✅ Production
+#   Best for:  Single 5090 max context + MTP speedup + vision + tools
+# ---------------------------------------------------------------------------
+# Qwen3.6-27B AutoRound INT4 + MTP on single RTX 5090.
+#
+# This is the "power user" single-card config for 5090 owners:
+#   - MTP speculative decoding (n=3) for ~60-80 TPS
+#   - fp8_e4m3 KV cache (Blackwell-native, better than fp8_e5m2)
+#   - 262K context (fills most of 32 GB VRAM)
+#   - Vision + tool calls enabled
+#   - No Genesis patches — v0.22.0 has all needed fixes upstream
+#
+# Trade-off vs minimal.yml:
+#   - This: MTP + fp8_e4m3 → ~60-80 TPS, 262K ctx, vision ✓, tools ✓
+#   - Minimal: no MTP + fp8_e5m2 → ~32 TPS, 32K ctx, vision ✓, tools ✓
+#
+# Run:
+#   MODEL_DIR=/path/to/qwen3.6-27b-autoround-int4 docker compose \
+#     -f models/qwen3.6-27b/vllm/compose/single/autoround-int4/mtp.yml up -d
+# ===========================================================================
+# Hardware metadata (parsed by scripts/preflight.sh):
+# Requires-min-vram-gb: 32
+# Engine-profile: vllm-stable
+# Requires-min-gpu-count: 1
+# Tensor-parallel: 1
+services:
+  vllm-qwen36-27b-mtp:
+    image: ${VLLM_IMAGE:-vllm/vllm-openai:v0.22.1}
+    container_name: "${ESTATE_CONTAINER:-vllm-qwen36-27b-mtp}"
+    restart: ${CLUB3090_RESTART:-unless-stopped}
+    ports:
+      - "${BIND_HOST:-0.0.0.0}:${ESTATE_PORT:-${PORT:-8020}}:8000"
+    volumes:
+      - ${MODEL_DIR:-../../../../../../models-cache}:/root/.cache/huggingface
+      # torch.compile + Triton kernel caches — first boot warms (~60-90 sec);
+      # subsequent boots reuse cached graphs.
+      - ../../../cache/torch_compile:/root/.cache/vllm/torch_compile_cache
+      - ../../../cache/triton:/root/.triton/cache
+
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=${ESTATE_GPUS:-${NVIDIA_VISIBLE_DEVICES:-all}}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
+      - HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-${OFFLINE:-0}}
+      - TRANSFORMERS_OFFLINE=${TRANSFORMERS_OFFLINE:-${OFFLINE:-0}}
+      - VLLM_WORKER_MULTIPROC_METHOD=spawn
+      - NCCL_CUMEM_ENABLE=0
+      - NCCL_P2P_DISABLE=1
+      - VLLM_NO_USAGE_STATS=1
+      - PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True,max_split_size_mb:512}
+      - VLLM_FLOAT32_MATMUL_PRECISION=high
+      - VLLM_USE_FLASHINFER_SAMPLER=1
+      - OMP_NUM_THREADS=1
+      - CUDA_DEVICE_MAX_CONNECTIONS=8
+      - VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
+    shm_size: "16gb"
+    ipc: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        exec vllm serve ${VLLM_ENFORCE_EAGER:+--enforce-eager} "$@"
+      - --
+    command:
+      - --model
+      - /root/.cache/huggingface/qwen3.6-27b-autoround-int4
+      - --served-model-name
+      - ${MODEL_ALIAS:-qwen3.6}
+      - --quantization
+      - auto_round
+      - --dtype
+      - float16
+      - --tensor-parallel-size
+      - "1"
+      - --max-model-len
+      - "${MAX_MODEL_LEN:-262144}"
+      - --gpu-memory-utilization
+      - "${GPU_MEMORY_UTIL:-0.94}"
+      - --max-num-seqs
+      - "${MAX_NUM_SEQS:-4}"
+      - --max-num-batched-tokens
+      - "${MAX_NUM_BATCHED:-4128}"
+      - --kv-cache-dtype
+      - fp8_e4m3
+      - --trust-remote-code
+      - --reasoning-parser
+      - qwen3
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - qwen3_coder
+      - --enable-prefix-caching
+      - --enable-chunked-prefill
+      - --performance-mode
+      - interactivity
+      - --speculative-config
+      - '{"method":"mtp","num_speculative_tokens":${SPEC_N_MAX:-3}}'
+      - --override-generation-config
+      - '{"temperature":${TEMP:-${TEMPERATURE:-0.6}},"top_p":${TOP_P:-0.95},"top_k":${TOP_K:-20},"min_p":${MIN_P:-0.0},"repetition_penalty":${REPEAT_PENALTY:-1.0}}'
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"

@@ -142,13 +142,26 @@ COMPOSE_REGISTRY = {
     # NVFP4 kernel still maturing in vLLM — test to compare with AutoRound.
     "vllm/nvfp4-mtp": _entry(
         model="qwen3.6-27b", weights_variant="sakamakismile-nvfp4-mtp", workload="fast-chat",
-        engine="vllm-nightly-clean", drafter="qwen-mtp-builtin", kv_format="fp8_e4m3",
-        tp=1, max_ctx=204800, max_num_seqs=1, mem_util=0.95,
+        engine="vllm-stable", drafter="qwen-mtp-builtin", kv_format="fp8_e4m3",
+        tp=1, max_ctx=224000, max_num_seqs=4, mem_util=0.95,
         compose_path="models/qwen3.6-27b/vllm/compose/single/nvfp4-mtp/mtp.yml",
         default_port=8020,
         kvcalc_key="SKIP",
         status="experimental",
-        status_note="SM120 single-card. 200K ctx, port 8020, --alias qwen3.6. sakamakismile NVFP4+MTP weights (19 GB). MTP n=3, fp8_e4m3 KV. Text-only, no vision. NVFP4 kernel still maturing — may be slower than AutoRound INT4.",
+        status_note="SM120 single-card. 224K ctx, port 8020, --alias qwen3.6. sakamakismile NVFP4+MTP weights (19 GB). MTP n=3, fp8_e4m3 KV. Text-only, no vision. --performance-mode interactivity. 4 concurrent seqs.",
+    ),
+
+    # Qwen 3.6 27B AutoRound INT4 + MTP, vLLM single-card 5090.
+    # Lorbus AutoRound INT4 with BF16 mtp.fc preserved.
+    "vllm/autoround-int4-mtp": _entry(
+        model="qwen3.6-27b", weights_variant="autoround-int4", workload="fast-chat",
+        engine="vllm-stable", drafter="qwen-mtp-builtin", kv_format="fp8_e4m3",
+        tp=1, max_ctx=262144, max_num_seqs=4, mem_util=0.94,
+        compose_path="models/qwen3.6-27b/vllm/compose/single/autoround-int4/mtp.yml",
+        default_port=8020,
+        kvcalc_key="SKIP",
+        status="production",
+        status_note="SM120 single-card. 262K ctx, port 8020, --alias qwen3.6. Lorbus AutoRound INT4+MTP weights (~20 GB). MTP n=3, fp8_e4m3 KV. --performance-mode interactivity. 4 concurrent seqs.",
     ),
 
     # Qwen 3.6 27B, vLLM dual/multi-card.
