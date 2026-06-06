@@ -15,6 +15,16 @@
 # Qwen3.6-27B NVFP4 + MTP on single RTX 5090.
 #
 # Based on Reddit u/Maheidem's config + CobraPhil's optimizations.
+# Source: https://www.reddit.com/r/LocalLLaMA/comments/1t5dya8/qwen36_27b_nvfp4_mtp_on_a_single_rtx_5090_200k/
+#
+# Our changes from the original Reddit config:
+#   - vLLM image: cu130-nightly (v0.19.2rc1) → v0.22.0 (stable)
+#   - Model: text-only NVFP4 (language_model_only=true, skip_mm_profiling=true)
+#   - Context: 200K → 224K (0.95 safe ceiling on 5090)
+#   - Concurrency: 1 → 4 (max_num_seqs=4)
+#   - GPU memory: 0.98 → 0.95 (autotuner OOM at 0.98)
+#   - Added FlashInfer cache persistence
+#
 # NVFP4 uses Blackwell FP4 tensor cores (FlashInferCutlassNvFp4LinearKernel).
 # Measured: ~92 t/s avg, ~155 t/s peak, MTP acceptance ~78% (2026-06-06).
 # KV cache: 310,472 tokens at gpu_memory_utilization=0.98.

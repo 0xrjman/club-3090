@@ -85,6 +85,14 @@ Run via `bash scripts/launch.sh` (interactive) or `bash scripts/switch.sh <varia
 
 `bash scripts/switch.sh vllm/nvfp4-mtp`. sakamakismile NVFP4+MTP weights (`qwen3.6-27b-nvfp4-mtp`, 19 GB) + fp8_e4m3 KV + MTP `n=3` + chunked prefill. vLLM v0.22.0 stock (no Genesis patches needed for NVFP4).
 
+**Source:** [Reddit u/Maheidem's original config](https://www.reddit.com/r/LocalLLaMA/comments/1t5dya8/qwen36_27b_nvfp4_mtp_on_a_single_rtx_5090_200k/) + CobraPhil's optimizations. Our changes:
+- vLLM: cu130-nightly (v0.19.2rc1) → v0.22.0 (stable)
+- Model: text-only NVFP4 (`language_model_only=true`, `skip_mm_profiling=true`)
+- Context: 200K → 224K (0.95 safe ceiling on 5090)
+- Concurrency: 1 → 4 (`max_num_seqs=4`)
+- GPU memory: 0.98 → 0.95 (autotuner OOM at 0.98)
+- Added FlashInfer cache persistence
+
 **Measured on RTX 5090 (32 GB, sm_120, 2026-06-06):**
 
 | Metric | Value |
