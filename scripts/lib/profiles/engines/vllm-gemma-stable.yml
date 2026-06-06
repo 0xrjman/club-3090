@@ -5,7 +5,7 @@ type: vllm
 stability: stable
 install:
   method: docker_image
-  spec: vllm/vllm-openai:v0.22.0
+  spec: vllm/vllm-openai:v0.22.1
 min_sm: 7.5
 supported_model_families:
   - gemma4-swa-dense

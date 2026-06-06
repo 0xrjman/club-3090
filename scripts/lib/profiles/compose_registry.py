@@ -143,12 +143,12 @@ COMPOSE_REGISTRY = {
     "vllm/nvfp4-mtp": _entry(
         model="qwen3.6-27b", weights_variant="sakamakismile-nvfp4-mtp", workload="fast-chat",
         engine="vllm-stable", drafter="qwen-mtp-builtin", kv_format="fp8_e4m3",
-        tp=1, max_ctx=224000, max_num_seqs=4, mem_util=0.95,
+        tp=1, max_ctx=219200, max_num_seqs=2, mem_util=0.94,
         compose_path="models/qwen3.6-27b/vllm/compose/single/nvfp4-mtp/mtp.yml",
         default_port=8020,
         kvcalc_key="SKIP",
         status="experimental",
-        status_note="SM120 single-card. 224K ctx, port 8020, --alias qwen3.6. sakamakismile NVFP4+MTP weights (19 GB). MTP n=3, fp8_e4m3 KV. Text-only, no vision. --performance-mode interactivity. 4 concurrent seqs.",
+        status_note="SM120 single-card. 224K ctx, port 8020, --alias qwen3.6. sakamakismile NVFP4+MTP weights (19 GB). MTP n=3, fp8_e4m3 KV. Text-only, no vision. --performance-mode interactivity. 2 concurrent seqs.",
     ),
 
     # Qwen 3.6 27B AutoRound INT4 + MTP, vLLM single-card 5090.

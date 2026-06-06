@@ -5,7 +5,7 @@ type: vllm
 stability: stable
 install:
   method: docker_image
-  spec: vllm/vllm-openai:v0.22.0
+  spec: vllm/vllm-openai:v0.22.1
 min_sm: 7.5
 supported_model_families:
   - dense
@@ -44,4 +44,4 @@ required_overlays: []
 # overlay-carrying (for Gemma's provenance), hence the two-engine split.
 vendored_overlays: []
 required_genesis: false
-notes: "Overlay-free stable vLLM — docker `vllm/vllm-openai:v0.22.0`. The VERSION lives only in install.spec: bump here on the next stable, the engine NAME never changes ('keep the tag, change the number'; #254 2026-06-05). This is the v0.22.0 SUCCESSOR to `vllm-nightly-clean` (whose nightly-bf610c2f image was purged from Docker Hub): the broad, overlay-free engine for Qwen3-Next (hybrid 27b + MoE 35B-A3B), generic `dense` transformers, and uncurated derived-emission bases. Slugs: `vllm/qwen-35b-a3b-dual`, `vllm/dual`, `vllm/minimal` (live-validated on stock v0.22.0 2026-06-05: TP=2 + MTP + tool-call clean, marlin-pad confirmed unnecessary). Gemma 4 paths stay on `vllm-gemma-stable` (it carries the #40391 per-head-KV + #42006 tool-parser overlays — an overlay-carrying engine cannot be a derived base, so it must remain separate). The pip `dense` lower-bound is `vllm-pip-baseline`. As the remaining `vllm-nightly-clean` slugs are validated on v0.22.0 they migrate here and that engine is deprecated. VLLM_IMAGE override still works."
+notes: "Overlay-free stable vLLM — docker `vllm/vllm-openai:v0.22.1`. The VERSION lives only in install.spec: bump here on the next stable, the engine NAME never changes ('keep the tag, change the number'; #254 2026-06-05). This is the v0.22.0 SUCCESSOR to `vllm-nightly-clean` (whose nightly-bf610c2f image was purged from Docker Hub): the broad, overlay-free engine for Qwen3-Next (hybrid 27b + MoE 35B-A3B), generic `dense` transformers, and uncurated derived-emission bases. Slugs: `vllm/qwen-35b-a3b-dual`, `vllm/dual`, `vllm/minimal` (live-validated on stock v0.22.0 2026-06-05: TP=2 + MTP + tool-call clean, marlin-pad confirmed unnecessary). Gemma 4 paths stay on `vllm-gemma-stable` (it carries the #40391 per-head-KV + #42006 tool-parser overlays — an overlay-carrying engine cannot be a derived base, so it must remain separate). The pip `dense` lower-bound is `vllm-pip-baseline`. As the remaining `vllm-nightly-clean` slugs are validated on v0.22.0 they migrate here and that engine is deprecated. VLLM_IMAGE override still works."

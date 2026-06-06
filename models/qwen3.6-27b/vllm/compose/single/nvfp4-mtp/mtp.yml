@@ -101,11 +101,11 @@ services:
       - --tensor-parallel-size
       - "1"
       - --max-model-len
-      - "${MAX_MODEL_LEN:-224000}"
+      - "${MAX_MODEL_LEN:-219200}"
       - --gpu-memory-utilization
-      - "${GPU_MEMORY_UTIL:-0.95}"
+      - "${GPU_MEMORY_UTIL:-0.94}"
       - --max-num-seqs
-      - "${MAX_NUM_SEQS:-4}"
+      - "${MAX_NUM_SEQS:-2}"
       - --max-num-batched-tokens
       - "${MAX_NUM_BATCHED:-4096}"
       - --kv-cache-dtype
