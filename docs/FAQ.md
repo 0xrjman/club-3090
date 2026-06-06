@@ -56,6 +56,12 @@ Depends on the arch. The short version:
 
 Full hardware-acceleration matrix (which dtypes/quants run on Tensor Cores natively vs in software, per GPU class) at [DTYPE_MATRIX.md](DTYPE_MATRIX.md), including the weight-only vs weight+activation axis and the NVFP4 / MXFP4 / FP6 Blackwell additions.
 
+### My AWQ / FP8 model errors on `--kv-cache-dtype fp8` — why, and what do I use?
+
+You'll see `ValueError: fp8_e5m2 kv-cache is not supported with fp8 checkpoints`. It fires for any **compressed-tensors** checkpoint (AWQ, FP8-weight, INT8-weight): vLLM won't pair fp8 KV with a compressed-tensors-loaded model, and the guard triggers whether you pass `--quantization compressed-tensors` or let it auto-detect (it keys off the *detected* method, not the flag). It is **not** about a real fp8 weight — a pure-int4 AWQ trips it too.
+
+Use **`--kv-cache-dtype int8_per_token_head`** instead: same ~1 byte/token, **native in stock vLLM ≥ v0.22.0** (no overlay) for standard models like Qwen, and it sidesteps the guard. (`auto_round` / GPTQ checkpoints are *not* affected — they take fp8 KV fine, which is why `vllm/dual` runs it.) **Gemma-4** is the one model that *does* need an overlay (#40391) for int8-PTH, because its interleaved head dims break KV page-size unification. Full picker: [DTYPE_MATRIX.md](DTYPE_MATRIX.md).
+
 ### Does this work on AMD / Intel / Apple Silicon?
 
 vLLM: NVIDIA-only (CUDA). llama.cpp: yes — pick the right Docker image (`ghcr.io/ggml-org/llama.cpp:server-rocm` for AMD, `:server` for CPU-only, or build from source for Apple Silicon). Update the `image:` line in the compose. The flags (`--ngl`, `-fa on`, `--cache-type-k q4_0`) work identically across backends.

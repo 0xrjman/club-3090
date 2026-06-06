@@ -517,16 +517,51 @@ patches:
       drop_when: "merged into the pinned release and verified on Gemma 4 long-context stress"
     status: verified
 
+  - id: gemma-a4b-vllm-pr40391-rebased
+    model: [gemma-4-26b-a4b]
+    files:
+      - models/gemma-4-26b-a4b/vllm/patches/vllm-pr40391-v0.22.0
+    load_bearing_when:
+      - composes:
+          - vllm/gemma-26ba4b-single
+        reason: "Pads hybrid Gemma 4 26B-A4B per-token-head KV cache layout (sliding head_dim 256 / global head_dim 512) so INT8/PTH long context boots on a single 3090."
+        evidence: "models/gemma-4-26b-a4b/vllm/patches/vllm-pr40391-v0.22.0/README.md"
+    delivery:               # DEPRECATED/READ-ONLY (test-only) — see header
+      dockerfile_bake: false
+      entrypoint_invoke: true
+      genesis: false
+    delivery_gaps: []
+    # Model-scoped copy of the 31b gemma-vllm-pr40391-rebased overlay (#465). Patches
+    # are <model>/<engine>-scoped (CLAUDE.md), so the 26B-A4B single carries its own
+    # identical copy under models/gemma-4-26b-a4b/vllm/patches/ rather than reaching
+    # across model trees. Same lean boot-time diff-apply: ~240-line #40391 delta + the
+    # one new helper file, applied to stock v0.22.0 before vllm imports.
+    delivery_mechanism: install_script
+    delivery_spec:
+      script: models/gemma-4-26b-a4b/vllm/patches/vllm-pr40391-v0.22.0/install.sh
+      mounted_at: /etc/club3090/pr40391
+      invoke: "boot-time: copies kv_cache_shape_utils.py + applies the ~240-line #40391 diff onto stock v0.22.0 (idempotent; fail-loud if the diff does not apply cleanly)"
+      invoked_before: vllm-import
+      wired_at: [volumes, entrypoint]
+    drift_guard:
+      kind: import-and-boot
+      check: "Gemma 4 26B-A4B INT8 per-token-head KV cache pages unify (get_padded_attention_kv_cache_shape present) on the pinned v0.22.0 image"
+      on_fail: hard-refuse   # foundational: the INT8/PTH single compose will not boot without it
+    capability: gemma4-int8-pth-kv
+    foundational: true
+    upstream:
+      ref: vllm-project/vllm#40391
+      status: open-rebased-local
+      drop_when: "merged into the pinned release and verified on Gemma 4 long-context stress"
+    status: verified
+
   - id: gemma-a4b-vllm-pr40886-awq-moe-keys
+    deprecated_on: "2026-06-06"
+    deprecation_reason: "AWQ compressed-tensors MoE key remap is in stock v0.22.0; gemma-4-26b-a4b AWQ now serves overlay-free (#326). Compose mounts removed."
     model: [gemma-4-26b-a4b]
     files:
       - models/gemma-4-26b-a4b/vllm/patches/vllm-pr40886-awq-moe-keys
-    load_bearing_when:
-      - composes:
-          - vllm/gemma-a4b-awq
-          - vllm/gemma-a4b-awq-mtp
-        reason: "Remaps compressed-tensors AWQ MoE expert keys so Gemma 4 26B-A4B AWQ loads."
-        evidence: "models/gemma-4-26b-a4b/vllm/patches/vllm-pr40886-awq-moe-keys/README.md; BENCHMARKS.md#moe-models"
+    load_bearing_when: []
     delivery:               # DEPRECATED/READ-ONLY (test-only) — see header
       dockerfile_bake: false
       entrypoint_invoke: true

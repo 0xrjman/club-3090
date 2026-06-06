@@ -9,13 +9,14 @@ install:
 min_sm: 7.5
 supported_model_families:
   - gemma4-swa-dense
+  - gemma4-swa-moe        # Gemma 4 26B-A4B MoE — INT8-PTH long-ctx single (#465)
 features:
   int8_per_token_head: true
   turboquant_3bit_nc: false
   marlin_pad_sub_tile_n: false
   qwen3_coder_tool_parser: false
 feature_provenance:
-  int8_per_token_head: vllm-pr40391-rebased
+  int8_per_token_head: vllm-pr40391-rebased   # 31b dual; the 26b-a4b single carries its own copy (gemma-a4b-vllm-pr40391-rebased)
 supported_kv_formats:
   - bf16
   - fp16
@@ -28,6 +29,8 @@ supported_weight_formats:
   - bf16
   - fp16
   - autoround
+  - awq                   # cyankiwi AWQ-4bit weights_variant (gemma-4-26b-a4b MoE, #465)
+  - compressed-tensors    # the AWQ pack's actual `format:` — C14 matches on this (Marlin WNA16 on sm_86)
 required_overlays: []
 vendored_overlays:
   - id: vllm-pr40391-rebased
@@ -51,4 +54,4 @@ vendored_overlays:
     local_status: dropped
     purpose: "truncate_prompt_tokens compatibility. DROPPED 2026-05-31 — merged upstream 2026-05-06, present in stock v0.22.0 (and v0.21.0)."
 required_genesis: false
-notes: "Gemma 4 31B vLLM path on immutable v0.22.0 (both gemma-bf16-mtp + gemma-int8-mtp). Both carry the #42006 streaming-multi-tool-call fix (lean diff-apply); gemma-int8-mtp ALSO carries the #40391 per-head-KV overlay (its 262K KV path). fp8 KV is hardware-dead on Ampere sm_86 — int8_per_token_head is the only quantized-KV path (use bf16 otherwise)."
+notes: "Gemma 4 vLLM path on immutable v0.22.0. 31B (gemma-bf16-mtp + gemma-int8-mtp) carry the #42006 streaming-multi-tool-call fix; gemma-int8-mtp ALSO carries #40391 (its 262K per-head-KV path). The 26B-A4B MoE single (gemma-26ba4b-single, AWQ/compressed-tensors → Marlin WNA16) ALSO rides #40391 for its INT8-PTH long-ctx KV — a separate model-scoped copy (gemma-a4b-vllm-pr40391-rebased) since patches are <model>/<engine>-scoped. fp8 KV is hardware-dead on Ampere sm_86 — int8_per_token_head is the only quantized-KV path (use bf16 otherwise)."

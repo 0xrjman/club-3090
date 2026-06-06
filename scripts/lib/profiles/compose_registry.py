@@ -579,50 +579,31 @@ COMPOSE_REGISTRY = {
         status_note="Dual-card beellama Gemma-4-31B Q8_K_XL + DFlash (Anbeeld DFlash-IQ4_XS draft). v0.3.0 sm_86 2026-06-01: 192K balanced ceiling (tensor-split 0.55,0.45 → ~21.4/21.9 GB; 262K OOMs — Gemma full-attn layers grow KV). High-fidelity Q8 sibling of beellama/gemma-dflash-dual (q4ks). Earlier 'v0.3.0-wide DFlash-on-PROSE regression' RETRACTED (2026-06-03) — didn't reproduce on qwen single+dual or gemma single; was an AR over-read + wrong baseline. This gemma-Q8-dual not separately re-benched. Promote on a STABLE tag.",
     ),
 
-    # v0.7.3 MoE onboarding — Gemma 4 26B-A4B + Qwen 3.6 35B-A3B.
-    # Both target the unconstrained-nightly engine (vllm-nightly-clean) which
-    # rides nightly-bf610c2f (2026-05-15, post-PR-#42521). Gemma is the
-    # shippable path; Qwen 35B-A3B is preview-only until Genesis v7.73.x
-    # re-anchors on a post-#42521 nightly.
-    "vllm/gemma-a4b-single": _entry(
-        model="gemma-4-26b-a4b", weights_variant="autoround-int4-mixed", workload="fast-chat",
-        engine="vllm-nightly-clean", drafter=None, kv_format="bf16",
-        tp=1, max_ctx=8192, max_num_seqs=256, mem_util=0.92,
-        compose_path="models/gemma-4-26b-a4b/vllm/compose/single/autoround-int4-mixed/bf16.yml",
+    # Gemma 4 26B-A4B MoE — AWQ on vLLM v0.22.0. AWQ-4bit (compressed-tensors) MoE
+    # experts resolve to Marlin WNA16 MoE on Ampere sm_86; the AutoRound INT4-mixed
+    # variant is Ampere-dead (uint8b128, no W4A16 kernel) and was archived.
+    # Single (#465, 2026-06-06): INT8-PTH KV via vendored PR #40391 (vllm-gemma-stable)
+    # lifts the single-card ceiling to long context (240K NIAH-clean) vs the prior
+    # bf16/16K path. Dual stays bf16/262K (no overlay; PR #40886 is in v0.22.0).
+    "vllm/gemma-26ba4b-single": _entry(
+        model="gemma-4-26b-a4b", weights_variant="awq", workload="fast-chat",
+        engine="vllm-gemma-stable", drafter="gemma-26b-it-assistant", kv_format="int8_per_token_head",
+        tp=1, max_ctx=176000, max_num_seqs=256, mem_util=0.94,
+        compose_path="models/gemma-4-26b-a4b/vllm/compose/single/awq/int8.yml",
         default_port=8040,
-        kvcalc_key="gemma-4-26b-a4b:gemma-a4b-single",
-        status="experimental",
-        status_note="v0.7.3 MoE onboarding — first-boot smoke, validation pending.",
+        kvcalc_key="SKIP",
+        status="caveats",
+        status_note="AWQ MoE + external MTP (n=4) + INT8-PTH KV via vendored PR #40391 on vLLM v0.22.0 (vllm-gemma-stable). Gate PASS 2026-06-06 (rebench gemma-26ba4b-int8r): verify-full ✓, bench 168 narr / 217 code TPS @370W (MTP AL 3.0-3.8), verify-stress NIAH→161K ✓, soak 20x5 PASS 0-growth, quality 109/150 think-ON (~ gemma-4-31B 107/150) / 98/150 think-OFF. Caveats: needs the #40391 overlay (not in stock v0.22.0); 176K @ mem_util 0.94 (262K only WITHOUT the MTP drafter — 0.96 OOMs the cudagraph-capture tail); think-OFF agentic/extraction softer (cli-40 30%, DataExtract 60% — recover to 52%/73% with thinking). INT8-PTH lifted single-card ctx from the prior bf16/16K.",
     ),
-    "vllm/gemma-a4b": _entry(
-        model="gemma-4-26b-a4b", weights_variant="autoround-int4-mixed", workload="fast-chat",
-        engine="vllm-nightly-clean", drafter=None, kv_format="bf16",
-        tp=2, max_ctx=32768, max_num_seqs=256, mem_util=0.92,
-        compose_path="models/gemma-4-26b-a4b/vllm/compose/dual/autoround-int4-mixed/bf16.yml",
-        default_port=8041,
-        kvcalc_key="gemma-4-26b-a4b:gemma-a4b",
-        status="experimental",
-        status_note="v0.7.3 MoE onboarding — primary bench target, validation pending.",
-    ),
-    "vllm/gemma-a4b-awq": _entry(
+    "vllm/gemma-26ba4b-dual": _entry(
         model="gemma-4-26b-a4b", weights_variant="awq", workload="fast-chat",
-        engine="vllm-nightly-clean", drafter=None, kv_format="bf16",
-        tp=2, max_ctx=32768, max_num_seqs=256, mem_util=0.92,
-        compose_path="models/gemma-4-26b-a4b/vllm/compose/dual/awq/bf16.yml",
-        default_port=8042,
-        kvcalc_key="gemma-4-26b-a4b:gemma-a4b-awq",
-        status="experimental",
-        status_note="v0.7.3 MoE onboarding — AWQ path with PR #40886 overlay, validation pending.",
-    ),
-    "vllm/gemma-a4b-awq-mtp": _entry(
-        model="gemma-4-26b-a4b", weights_variant="awq", workload="fast-chat",
-        engine="vllm-nightly-clean", drafter="gemma-26b-it-assistant", kv_format="bf16",
-        tp=2, max_ctx=32768, max_num_seqs=256, mem_util=0.92,
+        engine="vllm-stable", drafter="gemma-26b-it-assistant", kv_format="bf16",
+        tp=2, max_ctx=262144, max_num_seqs=256, mem_util=0.92,
         compose_path="models/gemma-4-26b-a4b/vllm/compose/dual/awq/mtp.yml",
-        default_port=8043,
-        kvcalc_key="gemma-4-26b-a4b:gemma-a4b-awq-mtp",
+        default_port=8041,
+        kvcalc_key="SKIP",
         status="experimental",
-        status_note="v0.7.3 MoE onboarding — AWQ + MTP, validation pending.",
+        status_note="AWQ + external MTP (gemma-26b-it-assistant n=4) on stock v0.22.0 — MTP +55% TPS (134->208, AL 3.55) validated 2026-06-05. Max ctx 262K (model max; KV pool 806,821 tok at 262144/0.92, 2x 3090) boot+coherence validated 2026-06-06. Promote after rebench-full + soak.",
     ),
     "vllm/qwen-a3b-preview-single": _entry(
         model="qwen3.6-35b-a3b", weights_variant="autoround-int4", workload="fast-chat",
@@ -661,8 +642,8 @@ DEFAULTS = {
     # gemma config that can't follow stable). gemma-bf16-mtp stays as the stable v0.22.0
     # no-overlay 32K fallback — kept, not deprecated, just no longer the default.
     ("gemma-4-31b", "vllm", "dual"): "vllm/gemma-int8-mtp",
-    ("gemma-4-26b-a4b", "vllm", "single"): "vllm/gemma-a4b-single",
-    ("gemma-4-26b-a4b", "vllm", "dual"): "vllm/gemma-a4b",
+    ("gemma-4-26b-a4b", "vllm", "single"): "vllm/gemma-26ba4b-single",
+    ("gemma-4-26b-a4b", "vllm", "dual"): "vllm/gemma-26ba4b-dual",
     ("qwen3.6-35b-a3b", "vllm", "single"): "vllm/qwen-a3b-preview-single",
     ("qwen3.6-35b-a3b", "vllm", "dual"): "vllm/qwen-35b-a3b-dual",
 }

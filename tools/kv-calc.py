@@ -255,7 +255,7 @@ COMPOSE_ALIAS_TEXT = {
     # an explicit --model, and the reverse map is keyed by (unique) registry
     # slug. `gemma-dual` → the MTP dual; `gemma-no-mtp` → the no-drafter dual.
     "gemma-4-12b": "gemma-dual=vllm/gemma-12b-dual-bf16-mtp gemma-single-int8-mtp=vllm/gemma-12b-single-int8-mtp",
-    "gemma-4-26b-a4b": "gemma-a4b-single=vllm/gemma-a4b-single gemma-a4b=vllm/gemma-a4b gemma-a4b-awq=vllm/gemma-a4b-awq gemma-a4b-awq-mtp=vllm/gemma-a4b-awq-mtp",
+    "gemma-4-26b-a4b": "gemma-26ba4b-single=vllm/gemma-26ba4b-single gemma-26ba4b-dual=vllm/gemma-26ba4b-dual",
 }
 COMPOSE_ALIASES = {model: tuple(part.split("=", 1) for part in text.split()) for model, text in COMPOSE_ALIAS_TEXT.items()}
 
@@ -851,16 +851,29 @@ def predict(
     #            concurrency reduced (BOOT OK, but `--max-num-seqs` may not be
     #            honored at full max_ctx).
     #   - PASS: requested KV fits with room to spare.
-    # The Qwen A3B preview is KV-light enough that the live 16K rows boot with
-    # <0.1 GB requested growing KV. Keep the older 1 GB guard for dense/long-KV
-    # models, but avoid false FAILs on this MoE family.
-    MIN_KV_GB = 0.05 if spec["model_family"] == "qwen3-next-moe" else 1.0
+    # vLLM's boot pre-check is token-capacity based, NOT an absolute byte floor:
+    # the (capped) growing KV pool must hold at least ONE max_model_len sequence.
+    # Growing KV scales linearly with max_num_seqs, so one sequence's growing KV
+    # is kv_pool_requested_gb / max_num_seqs. KV-light families (gemma4 SWA, Qwen3
+    # -Next MoE) legitimately boot with a sub-GB growing pool — the old flat 1.0 GB
+    # floor false-FAILed them (e.g. gemma-26ba4b-single: 0.78 GB pool holds 17,490
+    # tok ≥ 16,384 max_ctx, boots+serves live, #326). So lower the floor to the
+    # per-sequence requirement — which also generalizes the old qwen3-next-moe 0.05
+    # special-case. CAP it at the legacy 1.0 GB though: for dense/long-KV configs a
+    # single sequence needs many GB, and a hard per-seq threshold would false-FAIL
+    # measured-working configs sitting inside the estimator's ±1.5 GB band (e.g.
+    # gemma-dual-int8 @262K: 10.71 GB avail vs 10.84 GB/seq, 1.2% short but boots).
+    # Result: relax the floor for KV-light models, leave dense on its prior ≥1 GB
+    # behavior. Still FAILs when even one (small) sequence won't fit / fixed alone
+    # exceeds budget (available_for_kv → 0).
+    per_sequence_kv_gb = kv_pool_requested_gb / max(max_num_seqs, 1)
+    MIN_KV_GB = max(0.01, min(1.0, per_sequence_kv_gb))
     if available_for_kv < MIN_KV_GB:
         verdict = "FAIL"
         notes.append(
-            f"fixed components ({fixed_gb:.1f} GB) leave only {available_for_kv:.1f} GB for KV pool "
-            f"(need ≥{MIN_KV_GB:.1f} GB minimum); vLLM pre-check will refuse — "
-            f"lower max_ctx, drop a drafter, or raise mem_util"
+            f"fixed components ({fixed_gb:.1f} GB) leave only {available_for_kv:.2f} GB for KV — "
+            f"below the {MIN_KV_GB:.2f} GB that one max_ctx={max_ctx:,} sequence needs; vLLM "
+            f"pre-check will refuse to boot — lower max_ctx, drop a drafter, or raise mem_util"
         )
     elif kv_pool_requested_gb > available_for_kv * 1.05:
         verdict = "TIGHT"

@@ -5,17 +5,25 @@
 #   Drafter:   MTP n=4 — google/gemma-4-26B-A4B-it-assistant (external)
 #   KV:        bfloat16 (sidesteps Ampere fp8 dispatch issues)
 #   Vision:    off (limit-mm-per-prompt image=0 audio=0)
-#   Max ctx:   32K (matches awq.yml for direct A/B)
-#   Genesis:   none (Gemma 4 family doesn't need Genesis)
-#   Status:    🧪 Experimental — v0.7.3 MoE onboarding, AWQ + MTP (validation pending; ships alongside awq.yml)
+#   Max ctx:   262K (model max — laddered: KV pool 806,821 tok at 262144/0.92
+#              util on 2x 3090; sliding_window=1024 keeps most-layer KV cheap)
+#   Genesis:   N/A — Genesis is Qwen3-Next-specific
+#   Status:    🧪 Experimental — AWQ + external MTP on stock vLLM v0.22.0; boot-validated 2026-06-06 (#326), rebench-full/soak pending before Production
 # ---------------------------------------------------------------------------
-# Same shape as awq.yml plus the external MTP assistant drafter wired via
-# `--speculative-config`. n=4 per the gemma-26b-it-assistant DrafterProfile.
+# AWQ-4bit (compressed-tensors → Marlin WNA16 on sm_86) + the external MTP
+# assistant drafter wired via `--speculative-config`. n=4 per the
+# gemma-26b-it-assistant DrafterProfile. Sibling `single/awq/base.yml` is the
+# no-spec tp=1 baseline; this is the tp=2 + MTP path.
 #
-# Direct A/B target: awq.yml gives 138.88 / 138.67 wall TPS (2026-05-15, no
-# spec-decode). This compose measures MTP's contribution. Per the Qwen
-# 35B-A3B preview-MTP finding (slower despite high acceptance), it's worth
-# being skeptical — measure both before declaring a default.
+# Wiring history (#326, 2026-06-06): the AutoRound-int4-mixed weights (bf16.yml,
+# now in ../_archive/) are Ampere-dead — int4-MIXED packs to `uint8b128`, which
+# has no W4A16 kernel on sm_86 (Cutlass/Machete are Hopper-only; Triton W4A16
+# only takes uint4b8/uint4). The cyankiwi AWQ-4bit (pure uint4, compressed-
+# tensors) resolves to Marlin WNA16 MoE on sm_86 and serves cleanly. The prior
+# no-spec `awq/bf16.yml` was archived (this MTP variant supersedes it).
+#
+# Per the Qwen 35B-A3B preview-MTP finding (slower despite high acceptance),
+# stay skeptical on MTP net-gain — measure with rebench-full before any default.
 #
 # Why a separate drafter path (not built-in MTP head):
 #   Gemma 4 26B-A4B doesn't ship a built-in MTP head — `mtp_num_hidden_layers`
@@ -23,28 +31,26 @@
 #   (`google/gemma-4-26B-A4B-it-assistant`, ~0.97 GB BF16) for this purpose.
 #   Same family pattern as the 31B assistant we already use for `gemma-bf16-mtp`.
 #
-# PR #40886 overlay still applied (compressed-tensors AWQ MoE key remap).
+# PR #40886 (AWQ compressed-tensors MoE key remap) is now in stock v0.22.0 —
+# no overlay needed (validated #326, 2026-06-05).
 # ===========================================================================
 # Hardware metadata (parsed by scripts/preflight.sh):
 # Requires-min-vram-gb: 24
-# Engine-profile: vllm-nightly-clean
+# Engine-profile: vllm-stable
 # Requires-min-gpu-count: 2
 # Tensor-parallel: 2
 # Requires-sm: 7.5+
 services:
   vllm-gemma-4-26b-a4b-awq-mtp-tp2:
-    image: ${VLLM_IMAGE:-vllm/vllm-openai:nightly-${VLLM_NIGHTLY_SHA}}
+    image: ${VLLM_IMAGE:-vllm/vllm-openai:v0.22.0}
     container_name: "${ESTATE_CONTAINER:-vllm-gemma-4-26b-a4b-awq-mtp-tp2}"
     restart: ${CLUB3090_RESTART:-unless-stopped}
     ports:
-      - "${ESTATE_PORT:-${PORT:-8043}}:8000"
+      - "${ESTATE_PORT:-${PORT:-8041}}:8000"
     volumes:
       - ${MODEL_DIR:-../../../../../../models-cache}:/root/.cache/huggingface
       - ../../../cache/torch_compile:/root/.cache/vllm/torch_compile_cache
       - ../../../cache/triton:/root/.triton/cache
-      # vLLM PR #40886 overlay — AWQ compressed-tensors MoE key remapping.
-      # See ../../../patches/vllm-pr40886-awq-moe-keys/README.md.
-      - ../../../patches/vllm-pr40886-awq-moe-keys/install.sh:/etc/club3090/install-pr40886.sh:ro
     environment:
       - NVIDIA_VISIBLE_DEVICES=${ESTATE_GPUS:-${NVIDIA_VISIBLE_DEVICES:-all}}
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
@@ -67,13 +73,6 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    entrypoint:
-      - /bin/bash
-      - -c
-      - |
-        bash /etc/club3090/install-pr40886.sh
-        exec vllm serve ${VLLM_ENFORCE_EAGER:+--enforce-eager} "$@"
-      - --
     command:
       - --override-generation-config
       - '{"temperature":${TEMP:-${TEMPERATURE:-1.0}},"top_p":${TOP_P:-0.95},"top_k":${TOP_K:-64},"min_p":${MIN_P:-0.0},"repetition_penalty":${REPEAT_PENALTY:-1.0}}'
@@ -90,7 +89,7 @@ services:
       - --pipeline-parallel-size
       - "${PP:-1}"
       - --max-model-len
-      - "${MAX_MODEL_LEN:-32768}"
+      - "${MAX_MODEL_LEN:-262144}"
       - --gpu-memory-utilization
       - "${GPU_MEMORY_UTILIZATION:-0.92}"
       - --max-num-seqs
@@ -104,6 +103,11 @@ services:
       - --trust-remote-code
       - --enable-auto-tool-choice
       - --tool-call-parser
+      - gemma4
+      # Route Gemma-4's <|channel>thought…<channel|> trace into reasoning_content
+      # (vLLM Gemma4ReasoningParser). No-ops with thinking OFF (no channel tokens);
+      # required for verify-full check 6. Matches gemma-4-31b/12b composes.
+      - --reasoning-parser
       - gemma4
       - --chat-template
       - /vllm-workspace/examples/tool_chat_template_gemma4.jinja
