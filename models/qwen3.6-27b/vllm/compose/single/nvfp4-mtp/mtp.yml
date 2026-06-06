@@ -6,11 +6,11 @@
 #   Drafter:   MTP n=3 (embedded MTP head in NVFP4 weights)
 #   KV:        fp8_e4m3 (Blackwell-native, higher precision than fp8_e5m2)
 #   Vision:    no (text-only mode)
-#   Max ctx:   262144 (262K validated on 5090 with 0.98)
+#   Max ctx:   224000 (0.95 safe ceiling on 5090; 262K needs 0.98 but OOMs at prefill)
 #   Max seqs:  4 (concurrent requests)
 #   Genesis:   N/A (stock vLLM, no Genesis patches needed for NVFP4)
 #   Status:    🧪 Experimental — first Qwen3.6 NVFP4 + MTP on 5090
-#   Best for:  High concurrency on Blackwell, 262K context, testing NVFP4
+#   Best for:  High concurrency on Blackwell, 224K context, testing NVFP4
 # ---------------------------------------------------------------------------
 # Qwen3.6-27B NVFP4 + MTP on single RTX 5090.
 #
@@ -91,9 +91,9 @@ services:
       - --tensor-parallel-size
       - "1"
       - --max-model-len
-      - "${MAX_MODEL_LEN:-262144}"
+      - "${MAX_MODEL_LEN:-224000}"
       - --gpu-memory-utilization
-      - "${GPU_MEMORY_UTIL:-0.98}"
+      - "${GPU_MEMORY_UTIL:-0.95}"
       - --max-num-seqs
       - "${MAX_NUM_SEQS:-4}"
       - --max-num-batched-tokens

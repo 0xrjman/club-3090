@@ -92,8 +92,8 @@ Run via `bash scripts/launch.sh` (interactive) or `bash scripts/switch.sh <varia
 | **Decode TPS (avg)** | **~92 t/s** |
 | **Decode TPS (peak, single)** | ~155 t/s |
 | **MTP acceptance rate** | ~78% |
-| **KV cache (0.98)** | 310,472 tokens |
-| **Max context** | 262,144 |
+| **KV cache (0.95)** | 224,000 tokens |
+| **Max context** | 224,000 |
 | **Max concurrency** | 4 |
 | **VRAM** | ~31.2 GiB (model 18.4 GiB + KV ~11 GiB + CUDA graph 0.4 GiB) |
 
