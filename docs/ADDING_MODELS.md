@@ -129,6 +129,22 @@ Before authoring the YAML, fill in this table for the new model:
 
 This becomes your **single source of truth** for the YAML.
 
+### Quant & arch gotchas — verify these or get bitten
+
+Five checks that have each cost real debugging time. Do them while you have `config.json` open:
+
+1. **Confirm the arch is registered in your *target engine image*** — not "vLLM" in the abstract. Gemma-4-12B is `Gemma4UnifiedForConditionalGeneration` and loads **only on the `gemma4-unified` image** (PR #44429); the 26B-A4B / 31B are `Gemma4ForConditionalGeneration` and load on **stock v0.22.0**. Same family, different arch classes, different images.
+   ```bash
+   docker run --rm --entrypoint python3 <image> -c \
+     "from vllm.model_executor.models.registry import ModelRegistry; print(ModelRegistry.get_supported_archs())"
+   ```
+2. **The MTP-head config key is family-specific.** Qwen3.6 uses **`mtp_num_hidden_layers`**; Qwen3-Next uses `num_nextn_predict_layers`. Check the *right* key **and** that `mtp.*` tensors exist in the weight index before concluding "no MTP head" — the wrong key reports a false negative.
+3. **Non-default models need `--reasoning-parser <family>`** (e.g. `gemma4`, `qwen3`) in the compose, or `verify-full` step 6 (thinking-mode) **false-fails** — the model emits its thinking into a channel the harness can't read as `reasoning_content`. It no-ops when thinking is off, so set it always.
+4. **Don't infer a quant's internals from its repo name** — read `quantization_config` (`quant_method`, `format`, `kv_cache_scheme`). e.g. `…-AWQ-BF16-INT4` is pure int4 (zero fp8); the name misleads.
+5. **KV dtype is constrained by the quant *loader*, not just the hardware.** A **compressed-tensors** checkpoint (AWQ / FP8 / INT8 weights) **cannot use fp8 KV** → use `int8_per_token_head` (native in stock v0.22.0 for uniform-head-dim models; Gemma-4 needs the #40391 overlay). `auto_round` / GPTQ take fp8 KV fine. Full picker: [DTYPE_MATRIX.md](DTYPE_MATRIX.md) + [QUANTIZATION.md](QUANTIZATION.md).
+
+> Meta-lesson: **engine capability flags / profiles can be stale** — when in doubt, verify against the *running image* (registry, boot log), not the profile.
+
 ## Step 2 — Author the ModelProfile YAML
 
 Drop the file at `scripts/lib/profiles/models/<id>.yml`. Loaded automatically by `load_profiles()`. Cross-references validated at startup.
