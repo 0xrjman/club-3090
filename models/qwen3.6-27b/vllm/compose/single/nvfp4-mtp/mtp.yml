@@ -6,16 +6,18 @@
 #   Drafter:   MTP n=3 (embedded MTP head in NVFP4 weights)
 #   KV:        fp8_e4m3 (Blackwell-native, higher precision than fp8_e5m2)
 #   Vision:    no (text-only mode)
-#   Max ctx:   204800 (200K validated, 256K possible but untested)
+#   Max ctx:   262144 (262K validated on 5090 with 0.98)
+#   Max seqs:  4 (concurrent requests)
 #   Genesis:   N/A (stock vLLM, no Genesis patches needed for NVFP4)
 #   Status:    🧪 Experimental — first Qwen3.6 NVFP4 + MTP on 5090
-#   Best for:  Testing NVFP4 performance vs AutoRound INT4 on Blackwell
+#   Best for:  High concurrency on Blackwell, 262K context, testing NVFP4
 # ---------------------------------------------------------------------------
 # Qwen3.6-27B NVFP4 + MTP on single RTX 5090.
 #
 # Based on Reddit u/Maheidem's config + CobraPhil's optimizations.
 # NVFP4 uses Blackwell FP4 tensor cores (FlashInferCutlassNvFp4LinearKernel).
-# Expected: ~78 tok/s generation at 200K (vs AutoRound INT4 ~100-130 tok/s).
+# Measured: ~92 t/s avg, ~155 t/s peak, MTP acceptance ~78% (2026-06-06).
+# KV cache: 310,472 tokens at gpu_memory_utilization=0.98.
 #
 # Key differences from AutoRound INT4:
 #   - NVFP4 is native FP4 TC (hardware), AutoRound uses Marlin FP4→FP16 (software)
@@ -42,7 +44,7 @@
 
 services:
   vllm-qwen36-27b-nvfp4-mtp:
-    image: ${VLLM_IMAGE:-vllm/vllm-openai:cu130-nightly}
+    image: ${VLLM_IMAGE:-vllm/vllm-openai:v0.22.0}
     container_name: "${ESTATE_CONTAINER:-vllm-qwen36-27b-nvfp4-mtp}"
     restart: unless-stopped
     ports:
@@ -51,6 +53,7 @@ services:
       - ${MODEL_DIR:-../../../../../../models-cache}:/root/.cache/huggingface
       - ../../../cache/torch_compile_nvfp4_tp1:/root/.cache/vllm/torch_compile_cache
       - ../../../cache/triton_nvfp4_tp1:/root/.triton/cache
+      - ../../../cache/flashinfer_nvfp4_tp1:/root/.cache/flashinfer
     environment:
       - NVIDIA_VISIBLE_DEVICES=${ESTATE_GPUS:-0}
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
@@ -88,11 +91,11 @@ services:
       - --tensor-parallel-size
       - "1"
       - --max-model-len
-      - "${MAX_MODEL_LEN:-204800}"
+      - "${MAX_MODEL_LEN:-262144}"
       - --gpu-memory-utilization
-      - "${GPU_MEMORY_UTIL:-0.95}"
+      - "${GPU_MEMORY_UTIL:-0.98}"
       - --max-num-seqs
-      - "1"
+      - "${MAX_NUM_SEQS:-4}"
       - --max-num-batched-tokens
       - "${MAX_NUM_BATCHED:-4096}"
       - --kv-cache-dtype

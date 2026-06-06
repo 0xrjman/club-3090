@@ -75,6 +75,66 @@ Run via `bash scripts/launch.sh` (interactive) or `bash scripts/switch.sh <varia
 
 ---
 
+## Single 5090 — vLLM NVFP4 + MTP
+
+> **⚠️ Experimental** — first Qwen3.6 NVFP4 + MTP on Blackwell sm_120. Only tested on RTX 5090 (32 GB). See [UPSTREAM.md](UPSTREAM.md) for kernel maturity status.
+
+### vLLM NVFP4 + MTP — `vllm/nvfp4-mtp` ⭐
+
+**Workload:** Blackwell-native FP4 inference with MTP speculative decoding. The first path using hardware FP4 tensor cores (FlashInferCutlassNvFp4LinearKernel) instead of software INT4→FP16 unquantize.
+
+`bash scripts/switch.sh vllm/nvfp4-mtp`. sakamakismile NVFP4+MTP weights (`qwen3.6-27b-nvfp4-mtp`, 19 GB) + fp8_e4m3 KV + MTP `n=3` + chunked prefill. vLLM v0.22.0 stock (no Genesis patches needed for NVFP4).
+
+**Measured on RTX 5090 (32 GB, sm_120, 2026-06-06):**
+
+| Metric | Value |
+|---|---|
+| **Decode TPS (avg)** | **~92 t/s** |
+| **Decode TPS (peak, single)** | ~155 t/s |
+| **MTP acceptance rate** | ~78% |
+| **KV cache (0.98)** | 310,472 tokens |
+| **Max context** | 262,144 |
+| **Max concurrency** | 4 |
+| **VRAM** | ~31.2 GiB (model 18.4 GiB + KV ~11 GiB + CUDA graph 0.4 GiB) |
+
+**Config details:**
+
+| Param | Value | Notes |
+|---|---|---|
+| `gpu_memory_utilization` | 0.98 | 0.95 for initial warmup, then 0.98 |
+| `kv_cache_dtype` | fp8_e4m3 | Higher precision than fp8_e5m2 |
+| `enable_prefix_caching` | true | Saves KV for repeated prefixes |
+| `enable_chunked_prefill` | true | Avoids long-prompt OOM |
+| `max_num_batched_tokens` | 4096 | Limited by MTP speculative config |
+| `speculative_config` | MTP n=3 | Embedded MTP head in weights |
+
+**Startup sequence (important — warmup is one-time):**
+
+1. First boot with `GPU_MEMORY_UTIL=0.95` — runs FlashInfer autotuner + torch.compile warmup (2-3 min)
+2. Restart with `GPU_MEMORY_UTIL=0.98` — warmup cached, full KV cache budget available
+
+**Known issues:**
+
+- ⚠️ FlashInfer fp4_gemm autotuner OOMs at 0.98 (falls back to default tactic, ~5% TPS impact)
+- ⚠️ NVFP4 kernel still maturing in vLLM — single-stream TPS (~92) lower than beellama Q4_K_M MTP (~84 but more stable, 262K context)
+- ⚠️ `model_type: qwen2_5` in sakamakismile weights — must re-download `config.json` from HF or fix locally
+
+**vs beellama Q4_K_M MTP (same 5090):**
+
+| | vLLM NVFP4 MTP | beellama Q4_K_M MTP |
+|---|---|---|
+| Engine | vLLM 0.22.0 | beellama.cpp v0.3.1 |
+| Weights | NVFP4 (19 GB) | Q4_K_M GGUF (16 GB) |
+| KV cache | fp8_e4m3 | q5_0 K + q4_1 V |
+| Context | 262K | 262K |
+| Concurrency | 4 | 1 |
+| Avg TPS | ~92 | ~84 |
+| Peak TPS | ~155 | ~97 |
+| Stability | Experimental | Production-ready |
+| Best for | High concurrency, Blackwell testing | Stable single-stream |
+
+---
+
 ## Measured TPS on single 3090
 
 ![Qwen3.6-27B TPS — single 3090 configs](img/performance-single.png)
