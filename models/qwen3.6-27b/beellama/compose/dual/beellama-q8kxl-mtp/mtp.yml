@@ -74,6 +74,8 @@ services:
       --cache-type-v ${KV_TYPE_V:-q4_1}
       --flash-attn on
       --cache-ram 0
+      --ctx-checkpoints 64
+      --checkpoint-min-step 128
       --no-host
       --jinja
       --reasoning ${REASONING:-off}

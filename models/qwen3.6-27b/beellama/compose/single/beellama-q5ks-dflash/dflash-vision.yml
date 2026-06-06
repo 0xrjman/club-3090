@@ -53,6 +53,8 @@ services:
       --flash-attn on
       --swa-full
       --cache-ram 0
+      --ctx-checkpoints 64
+      --checkpoint-min-step 128
       --no-host
       --jinja
       --mmproj /models/${MMPROJ_FILE:-qwen3.6-27b-gguf/mmproj-F16.gguf}
