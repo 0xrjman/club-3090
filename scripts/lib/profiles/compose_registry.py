@@ -136,6 +136,21 @@ COMPOSE_REGISTRY = {
         kvcalc_key="qwen3.6-27b:minimal",
     ),
 
+    # Qwen 3.6 27B NVFP4 + MTP, vLLM single-card 5090.
+    # Blackwell FP4 tensor core native, FlashInfer attention.
+    # Expected ~78 tok/s at 200K (vs AutoRound INT4 ~100-130 tok/s).
+    # NVFP4 kernel still maturing in vLLM — test to compare with AutoRound.
+    "vllm/nvfp4-mtp": _entry(
+        model="qwen3.6-27b", weights_variant="sakamakismile-nvfp4-mtp", workload="fast-chat",
+        engine="vllm-nightly-clean", drafter="qwen-mtp-builtin", kv_format="fp8_e4m3",
+        tp=1, max_ctx=204800, max_num_seqs=1, mem_util=0.95,
+        compose_path="models/qwen3.6-27b/vllm/compose/single/nvfp4-mtp/mtp.yml",
+        default_port=8020,
+        kvcalc_key="SKIP",
+        status="experimental",
+        status_note="SM120 single-card. 200K ctx, port 8020, --alias qwen3.6. sakamakismile NVFP4+MTP weights (19 GB). MTP n=3, fp8_e4m3 KV. Text-only, no vision. NVFP4 kernel still maturing — may be slower than AutoRound INT4.",
+    ),
+
     # Qwen 3.6 27B, vLLM dual/multi-card.
     "vllm/dual": _entry(
         model="qwen3.6-27b", weights_variant="autoround-int4", workload="long-ctx-single",

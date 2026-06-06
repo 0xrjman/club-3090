@@ -1,0 +1,113 @@
+# ===========================================================================
+# Profile (at-a-glance):
+#   Model:     Qwen3.6-27B (sakamakismile NVFP4 + MTP — Blackwell FP4 native)
+#   Engine:    vLLM (cu130-nightly or v0.22.0+)
+#   Topology:  Single 5090 (TP=1, sm_120 Blackwell, 32 GB)
+#   Drafter:   MTP n=3 (embedded MTP head in NVFP4 weights)
+#   KV:        fp8_e4m3 (Blackwell-native, higher precision than fp8_e5m2)
+#   Vision:    no (text-only mode)
+#   Max ctx:   204800 (200K validated, 256K possible but untested)
+#   Genesis:   N/A (stock vLLM, no Genesis patches needed for NVFP4)
+#   Status:    🧪 Experimental — first Qwen3.6 NVFP4 + MTP on 5090
+#   Best for:  Testing NVFP4 performance vs AutoRound INT4 on Blackwell
+# ---------------------------------------------------------------------------
+# Qwen3.6-27B NVFP4 + MTP on single RTX 5090.
+#
+# Based on Reddit u/Maheidem's config + CobraPhil's optimizations.
+# NVFP4 uses Blackwell FP4 tensor cores (FlashInferCutlassNvFp4LinearKernel).
+# Expected: ~78 tok/s generation at 200K (vs AutoRound INT4 ~100-130 tok/s).
+#
+# Key differences from AutoRound INT4:
+#   - NVFP4 is native FP4 TC (hardware), AutoRound uses Marlin FP4→FP16 (software)
+#   - NVFP4 kernel still maturing in vLLM, may be slower than AutoRound today
+#   - NVFP4 weights are smaller (19 GB vs ~20 GB for AutoRound INT4)
+#
+# Quick start:
+#   1. Ensure NVFP4 weights exist:
+#        ls $MODEL_DIR/qwen3.6-27b-nvfp4-mtp/
+#      (should contain model.safetensors)
+#   2. From this directory:
+#        MODEL_DIR=/home/rjman/data/models docker compose -f mtp.yml up -d
+#   3. Wait for "Application startup complete" (~2 min cold compile)
+#   4. curl http://localhost:8020/v1/models
+#
+# Override defaults via .env or shell:
+#   MODEL_DIR             host dir mounted as /root/.cache/huggingface
+#   MODEL_ALIAS           served model name                  (default: qwen3.6)
+#   MAX_MODEL_LEN         context length                     (default: 204800)
+#   GPU_MEMORY_UTIL       GPU memory utilization             (default: 0.95)
+#   SPEC_N_MAX            MTP speculative tokens             (default: 3)
+#   MAX_NUM_BATCHED       max batched tokens                 (default: 4096)
+#   PORT                  host port                          (default: 8020)
+
+services:
+  vllm-qwen36-27b-nvfp4-mtp:
+    image: ${VLLM_IMAGE:-vllm/vllm-openai:cu130-nightly}
+    container_name: "${ESTATE_CONTAINER:-vllm-qwen36-27b-nvfp4-mtp}"
+    restart: unless-stopped
+    ports:
+      - "${ESTATE_PORT:-${PORT:-8020}}:8000"
+    volumes:
+      - ${MODEL_DIR:-../../../../../../models-cache}:/root/.cache/huggingface
+      - ../../../cache/torch_compile_nvfp4_tp1:/root/.cache/vllm/torch_compile_cache
+      - ../../../cache/triton_nvfp4_tp1:/root/.triton/cache
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=${ESTATE_GPUS:-0}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
+      - VLLM_WORKER_MULTIPROC_METHOD=spawn
+      - VLLM_NO_USAGE_STATS=1
+      - OMP_NUM_THREADS=1
+      - PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True,max_split_size_mb:512}
+      - VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
+      - VLLM_FLOAT32_MATMUL_PRECISION=high
+      - VLLM_USE_FLASHINFER_SAMPLER=1
+      - TRITON_CACHE_DIR=/root/.triton/cache
+      - CUDA_DEVICE_MAX_CONNECTIONS=8
+    shm_size: "16gb"
+    ipc: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${ESTATE_GPUS:-0}"]
+              capabilities: [gpu]
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --model
+      - /root/.cache/huggingface/qwen3.6-27b-nvfp4-mtp
+      - --served-model-name
+      - ${MODEL_ALIAS:-qwen3.6}
+      - --quantization
+      - compressed-tensors
+      - --dtype
+      - float16
+      - --tensor-parallel-size
+      - "1"
+      - --max-model-len
+      - "${MAX_MODEL_LEN:-204800}"
+      - --gpu-memory-utilization
+      - "${GPU_MEMORY_UTIL:-0.95}"
+      - --max-num-seqs
+      - "1"
+      - --max-num-batched-tokens
+      - "${MAX_NUM_BATCHED:-4096}"
+      - --kv-cache-dtype
+      - fp8_e4m3
+      - --trust-remote-code
+      - --reasoning-parser
+      - qwen3
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - qwen3_coder
+      - --enable-prefix-caching
+      - --enable-chunked-prefill
+      - --speculative-config
+      - '{"method":"mtp","num_speculative_tokens":${SPEC_N_MAX:-3}}'
+      - --language-model-only
+      - --skip-mm-profiling
+      - --performance-mode
+      - interactivity

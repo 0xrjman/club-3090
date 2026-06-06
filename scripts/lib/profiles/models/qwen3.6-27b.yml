@@ -155,6 +155,18 @@ weights:
     engine: beellama
     kind: gguf
     verify_glob: "*.gguf"
+  sakamakismile-nvfp4-mtp:
+    path: qwen3.6-27b-nvfp4-mtp
+    local_subdir: qwen3.6-27b-nvfp4-mtp
+    size_gb: 19.6
+    format: safetensors
+    status: experimental
+    hf_repo: sakamakismile/Qwen3.6-27B-Text-NVFP4-MTP
+    files:
+      - model.safetensors
+    engine: vllm
+    kind: nvfp4
+    verify_glob: "*.safetensors"
   beellama-q8kxl-mtp:
     path: qwen3.6-27b-gguf/unsloth-mtp-q8kxl
     local_subdir: qwen3.6-27b-gguf/unsloth-mtp-q8kxl
