@@ -1,0 +1,91 @@
+# ===========================================================================
+# Profile (at-a-glance):
+#   Model:     Qwen3.6-27B (Unsloth Q4_K_M MTP GGUF — full model + embedded MTP head)
+#   Engine:    beellama.cpp (Anbeeld llama.cpp fork — MTP spec-dec)
+#   Topology:  Single 5090 (32 GB, sm_120)
+#   Drafter:   MTP (--spec-type draft-mtp, embedded head — NO separate draft model)
+#   KV:        q5_0 K + q4_1 V
+#   Vision:    no (mmproj NOT mounted; set MMPROJ_FILE + --mmproj for vision)
+#   Template:  native (GGUF-embedded) via --jinja
+#   Max ctx:   262144 (Q4_K_M weights + q5_0/q4_1 KV fits in 32 GB at 262K).
+#   Genesis:   N/A — beellama is a llama.cpp-family engine
+#   Status:    🧪 Experimental — single-card MTP variant with smaller weights.
+#   Best for:  long multi-turn, tool-call, general chat — MTP has ~90% pos-1
+#              acceptance on code, ~44% on prose; no long-context decay vs DFlash.
+#   NP:        1 slot (--kv-unified — single-slot default for compute-bound GPU)
+# ---------------------------------------------------------------------------
+# Qwen3.6-27B on beellama.cpp — single 5090, Unsloth Q4_K_M MTP + embedded MTP head.
+#
+# Why Q4_K_M: smaller weights (17.1 GB vs Q5_K_S 19.3 GB) = more VRAM headroom
+# for KV cache at long context. Quality slightly lower than Q5_K_S.
+#
+# VRAM is tight (~28.5 GB of 32 GB at 262K). Lower CTX_SIZE to 163840 if OOM.
+#
+# MTP vs DFlash: the MTP head is baked into the -m GGUF, so there is NO
+# --spec-draft-model / --spec-dflash-cross-ctx here; `--spec-type draft-mtp`
+# activates the embedded head, `--spec-draft-n-max` sets draft depth.
+#
+# Quick start:
+#   1. Ensure the MTP GGUF exists:
+#        ls $MODEL_DIR/qwen3.6-27b-gguf/unsloth-mtp-q4km/
+#      (should contain Qwen3.6-27B-Q4_K_M.gguf)
+#   2. From this directory:
+#        MODEL_DIR=/your/models/dir docker compose -f mtp.yml up -d
+#   3. curl http://localhost:8020/v1/models
+#
+# Override defaults via .env or shell:
+#   MODEL_DIR             host dir mounted as /models
+#   GGUF_FILE             MTP target GGUF under /models
+#   CTX_SIZE              KV pool size                 (default: 262144)
+#   DRAFT_N_MAX           --spec-draft-n-max           (default: 5)
+#   KV_TYPE_K / KV_TYPE_V K / V cache quant            (default: q5_0 / q4_1)
+#   BATCH_SIZE / UBATCH_SIZE / NP / REASONING / TEMP / TOP_K / TOP_P / MIN_P / PORT
+
+services:
+  beellama-qwen36-27b-mtp:
+    image: ${BEELLAMA_IMAGE:-ghcr.io/anbeeld/beellama.cpp:server-cuda13-v0.3.1}
+    container_name: "${ESTATE_CONTAINER:-beellama-qwen36-27b-mtp}"
+    restart: unless-stopped
+    ports:
+      - "${ESTATE_PORT:-${PORT:-8020}}:8080"
+    volumes:
+      - "${MODEL_DIR:-../../../../../../models-cache}:/models:ro"
+    # ⚠ -np 1 is intentional on a single card — MTP is single-slot by
+    #   default and extra slots divide a compute-bound GPU's throughput.
+    environment:
+      - CUDA_MANAGED_FORCE_DEVICE_ALLOC=1
+    command: >-
+      --host 0.0.0.0
+      --port 8080
+      --alias ${MODEL_ALIAS:-qwen3.6}
+      -m /models/${GGUF_FILE:-qwen3.6-27b-gguf/unsloth-mtp-q4km/Qwen3.6-27B-Q4_K_M.gguf}
+      --spec-type draft-mtp
+      --spec-draft-n-max ${DRAFT_N_MAX:-5}
+      -ngl ${NGL:-999}
+      --ctx-size ${CTX_SIZE:-262144}
+      -b ${BATCH_SIZE:-2048}
+      -ub ${UBATCH_SIZE:-512}
+      -np ${NP:-1}
+      --kv-unified
+      --cache-type-k ${KV_TYPE_K:-q5_0}
+      --cache-type-v ${KV_TYPE_V:-q4_1}
+      --flash-attn on
+      --swa-full
+      --cache-ram 0
+      --ctx-checkpoints 64
+      --checkpoint-min-step 128
+      --no-host
+      --jinja
+      --reasoning ${REASONING:-on}
+      --temp ${TEMP:-${TEMPERATURE:-0.6}}
+      --top-k ${TOP_K:-20}
+      --top-p ${TOP_P:-1.0}
+      --min-p ${MIN_P:-0.0}
+      --no-mmap
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${ESTATE_GPUS:-${CUDA_VISIBLE_DEVICES:-0}}"]
+              capabilities: [gpu]
