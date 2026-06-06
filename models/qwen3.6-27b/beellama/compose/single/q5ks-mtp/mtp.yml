@@ -68,7 +68,7 @@ services:
       --alias ${MODEL_ALIAS:-qwen3.6}
       -m /models/${GGUF_FILE:-qwen3.6-27b-gguf/unsloth-mtp-q5ks/Qwen3.6-27B-Q5_K_S.gguf}
       --spec-type draft-mtp
-      --spec-draft-n-max ${DRAFT_N_MAX:-5}
+      --spec-draft-n-max ${DRAFT_N_MAX:-3}
       -ngl ${NGL:-999}
       --ctx-size ${CTX_SIZE:-262144}
       -b ${BATCH_SIZE:-2048}

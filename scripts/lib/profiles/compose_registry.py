@@ -274,7 +274,7 @@ COMPOSE_REGISTRY = {
         default_port=8020,
         kvcalc_key="SKIP",
         status="experimental",
-        status_note="SM120 single-card. 262K ctx, port 8020, --alias qwen3.6. Unsloth Q4_K_M MTP GGUF (~17 GB weights) — smaller than Q5_K_S, more VRAM for KV. MTP draft-n-max=5. --no-mmap + CUDA_MANAGED_FORCE_DEVICE_ALLOC=1.",
+        status_note="SM120 single-card. 262K ctx, port 8020, --alias qwen3.6. Unsloth Q4_K_M MTP GGUF (~17 GB weights) — smaller than Q5_K_S, more VRAM for KV. MTP draft-n-max=3. --no-mmap + CUDA_MANAGED_FORCE_DEVICE_ALLOC=1.",
     ),
 
     # Qwen3.6-27B PRISM-PRO-DQ (Ex0bit dynamic-quant GGUF) — community-experimental, ik-llama.
