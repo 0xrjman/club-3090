@@ -87,14 +87,14 @@ def mk_einput(profile_like, *, der, gpu_count=2, sel_gpus=(0, 1),
 
 # ==========================================================================
 # e1 — positive clean derived case.
-#   vllm/gemma-a4b-single: vllm-nightly-clean (required_genesis:false,
+#   vllm/gemma-26ba4b-single: vllm-stable (required_genesis:false,
 #   vendored_overlays:[], install.method:docker_image), kv bf16,
 #   drafter None, required_engine_features []. tp=1 -> 1 GPU.
 #   weight_format bfloat16 (pure dtype row -> --quantization omitted).
 # ==========================================================================
 der_clean = mk_der(weight_format="bfloat16", torch_dtype="bfloat16",
                     slug="org/My-Model")
-ei = mk_einput("vllm/gemma-a4b-single", der=der_clean,
+ei = mk_einput("vllm/gemma-26ba4b-single", der=der_clean,
                gpu_count=1, sel_gpus=(0,), slug="org/My-Model")
 
 ok, reason = gc.derived_emittable(ei)
@@ -104,7 +104,7 @@ check(ok and reason is None,
 text, meta = gc.generate_from_profile(root, ei)
 
 # resolved image == engine install.spec (NOT a bare ${VLLM_NIGHTLY_SHA}).
-clean_engine = gc.load_engine(root, "vllm-nightly-clean")
+clean_engine = gc.load_engine(root, "vllm-stable")
 spec = clean_engine["install"]["spec"]
 check(f"image: {spec}" in text, "e1: image must be the resolved engine install.spec")
 check("${VLLM_NIGHTLY_SHA}" not in text,
@@ -167,7 +167,7 @@ check("      - --kv-cache-dtype" in t2 and "      - fp8_e5m2" in t2,
 check(m2["dtype"] == "bfloat16", "e1: fp8 row --dtype from torch_dtype")
 
 # trc resolved-permitted -> --trust-remote-code emitted.
-ei_trc = mk_einput("vllm/gemma-a4b-single", der=der_clean,
+ei_trc = mk_einput("vllm/gemma-26ba4b-single", der=der_clean,
                    gpu_count=1, sel_gpus=(0,), trc=True)
 t3, m3 = gc.generate_from_profile(root, ei_trc)
 check("      - --trust-remote-code" in t3 and m3["trc_emitted"] is True,
@@ -201,20 +201,20 @@ def expect_refuse(ei, token: str, label: str) -> None:
 # proving the COMPOSE_REGISTRY runtime-entry clause fires independently.
 ei_of = mk_einput("vllm/gemma-int8-mtp", der=mk_der(weight_format="bfloat16",
                                                 torch_dtype="bfloat16"))
-ei_of.runtime["engine"] = "vllm-nightly-clean"
+ei_of.runtime["engine"] = "vllm-stable"
 ei_of.runtime["kv_format"] = "bf16"
 expect_refuse(ei_of,
               "derived-runtime-unsupported:overlay-feature",
               "e1-neg/overlay-feature")
 
 # kv: synthesize a runtime that is engine-clean but TQ3-KV.
-ei_kv = mk_einput("vllm/gemma-a4b", der=mk_der(weight_format="bfloat16",
+ei_kv = mk_einput("vllm/gemma-26ba4b-single", der=mk_der(weight_format="bfloat16",
                                                torch_dtype="bfloat16"))
 ei_kv.runtime["kv_format"] = "turboquant_3bit_nc"
 expect_refuse(ei_kv, "derived-runtime-unsupported:kv", "e1-neg/kv")
 
 # drafter: synthesize a clean runtime whose only derived-emission blocker is a drafter.
-ei_drafter = mk_einput("vllm/gemma-a4b-single", der=mk_der(weight_format="bfloat16",
+ei_drafter = mk_einput("vllm/gemma-26ba4b-single", der=mk_der(weight_format="bfloat16",
                                                        torch_dtype="bfloat16"),
                        gpu_count=1, sel_gpus=(0,))
 ei_drafter.runtime["drafter"] = "qwen-mtp-builtin"
@@ -222,14 +222,14 @@ expect_refuse(ei_drafter, "derived-runtime-unsupported:drafter", "e1-neg/drafter
 
 # gpu-count: a clean no-drafter TP=2 shape on a simulated 1-GPU einput.
 expect_refuse(
-    mk_einput("vllm/gemma-a4b", der=mk_der(weight_format="bfloat16",
+    mk_einput("vllm/qwen-35b-a3b-dual", der=mk_der(weight_format="bfloat16",
                                            torch_dtype="bfloat16"),
               gpu_count=1, sel_gpus=(0,)),
     "derived-runtime-unsupported:gpu-count", "e1-neg/gpu-count")
 
 # engine-install-method: a pip-install engine (vllm-pip-baseline, install.method
 # pip). No registry entry uses it; synthesize the runtime to point at it.
-ei_pip = mk_einput("vllm/gemma-a4b-single",
+ei_pip = mk_einput("vllm/gemma-26ba4b-single",
                    der=mk_der(weight_format="bfloat16", torch_dtype="bfloat16"),
                    gpu_count=1, sel_gpus=(0,))
 ei_pip.runtime["engine"] = "vllm-pip-baseline"
@@ -239,7 +239,7 @@ expect_refuse(ei_pip, "derived-runtime-unsupported:engine-install-method",
 # unsupported-quant-for-derived:autoround — clean shape, weight_format
 # autoround (explicit CONTRACT-5 reject).
 expect_refuse(
-    mk_einput("vllm/gemma-a4b-single",
+    mk_einput("vllm/gemma-26ba4b-single",
               der=mk_der(weight_format="autoround", torch_dtype="bfloat16"),
               gpu_count=1, sel_gpus=(0,)),
     "derived-runtime-unsupported:unsupported-quant-for-derived:autoround",
@@ -248,7 +248,7 @@ expect_refuse(
 # unsupported-quant-for-derived:missing-torch-dtype — a quantized row
 # (awq) with NO torch_dtype and no callable header probe -> fail-closed.
 expect_refuse(
-    mk_einput("vllm/gemma-a4b-single",
+    mk_einput("vllm/gemma-26ba4b-single",
               der=mk_der(weight_format="awq", torch_dtype=None, selected=[]),
               gpu_count=1, sel_gpus=(0,)),
     "derived-runtime-unsupported:unsupported-quant-for-derived:missing-torch-dtype",
@@ -257,7 +257,7 @@ expect_refuse(
 # unsupported-quant-for-derived (bare) — weight_format not in the dispatch
 # table at all (never guess a --quantization).
 expect_refuse(
-    mk_einput("vllm/gemma-a4b-single",
+    mk_einput("vllm/gemma-26ba4b-single",
               der=mk_der(weight_format="some-exotic-quant",
                          torch_dtype="bfloat16"),
               gpu_count=1, sel_gpus=(0,)),

@@ -640,12 +640,12 @@ profiles:
       insertion_points:
         volumes: present    # overlay/sidecar mount anchor
         entrypoint: present  # sidecar invoke anchor
-  vllm/gemma-a4b-single:
-    compose_path: models/gemma-4-26b-a4b/vllm/compose/single/autoround-int4-mixed/bf16.yml
+  vllm/gemma-26ba4b-single:
+    compose_path: models/gemma-4-26b-a4b/vllm/compose/single/awq/base.yml
     genesis_equipped: false
     genesis_equipped_evidence: no GENESIS_* token in compose and kv_format is not turboquant*
     compose_service_template:
-      source: models/gemma-4-26b-a4b/vllm/compose/single/autoround-int4-mixed/bf16.yml  # whole service definition captured verbatim from this file
+      source: models/gemma-4-26b-a4b/vllm/compose/single/awq/base.yml  # whole service definition captured verbatim from this file
       param_slots:
         ports: { source: E.default_port, value: 8040 }
         tensor_parallel_size: { token: '${TP}', source: E.tp, value: 1 }
@@ -661,71 +661,19 @@ profiles:
           policy: governed   # locked design v6 §88 security model
           emit_rule: 'only if arch trc gate resolves evidence-cited false-permitted; never blind-passthrough'
       constants:
-        image: '${VLLM_IMAGE:-vllm/vllm-openai:nightly-${VLLM_NIGHTLY_SHA}}'   # captured constant; engine pin flows via env, NOT rewritten
+        image: '${VLLM_IMAGE:-vllm/vllm-openai:v0.22.0}'   # captured constant; engine pin flows via env, NOT rewritten
         verbatim_from_compose: [shm_size, ipc, deploy.resources, model_cache_volume, base_environment, base_entrypoint, '--model', '--served-model-name', '--quantization', '--dtype', '--tool-call-parser', '--chat-template', '--reasoning-parser', '--default-chat-template-kwargs', '--enable-prefix-caching', '--enable-chunked-prefill', '--enforce-eager']
       insertion_points:
         volumes: present    # overlay/sidecar mount anchor
         entrypoint: absent  # sidecar invoke anchor
-  vllm/gemma-a4b:
-    compose_path: models/gemma-4-26b-a4b/vllm/compose/dual/autoround-int4-mixed/bf16.yml
-    genesis_equipped: false
-    genesis_equipped_evidence: no GENESIS_* token in compose and kv_format is not turboquant*
-    compose_service_template:
-      source: models/gemma-4-26b-a4b/vllm/compose/dual/autoround-int4-mixed/bf16.yml  # whole service definition captured verbatim from this file
-      param_slots:
-        ports: { source: E.default_port, value: 8041 }
-        tensor_parallel_size: { token: '${TP}', source: E.tp, value: 2 }
-        max_model_len: { token: '${MAX_MODEL_LEN}', source: E.max_ctx, value: 32768 }
-        gpu_memory_utilization: { token: '${GPU_MEMORY_UTILIZATION}', source: E.mem_util, value: 0.92 }
-        kv_cache_dtype: { token: '${KV_CACHE_DTYPE}', source: 'kv_arg(E.kv_format)', kv_format: bf16, value: null }
-        max_num_seqs: { token: '--max-num-seqs', source: E.max_num_seqs, value: 256 }
-        speculative_config: omitted  # E.drafter is None -> --speculative-config not emitted
-      governed_slots:
-        trust_remote_code:
-          token: '--trust-remote-code'
-          present_in_shipped_compose: true
-          policy: governed   # locked design v6 §88 security model
-          emit_rule: 'only if arch trc gate resolves evidence-cited false-permitted; never blind-passthrough'
-      constants:
-        image: '${VLLM_IMAGE:-vllm/vllm-openai:nightly-${VLLM_NIGHTLY_SHA}}'   # captured constant; engine pin flows via env, NOT rewritten
-        verbatim_from_compose: [shm_size, ipc, deploy.resources, model_cache_volume, base_environment, base_entrypoint, '--model', '--served-model-name', '--quantization', '--dtype', '--tool-call-parser', '--chat-template', '--reasoning-parser', '--default-chat-template-kwargs', '--enable-prefix-caching', '--enable-chunked-prefill', '--enforce-eager']
-      insertion_points:
-        volumes: present    # overlay/sidecar mount anchor
-        entrypoint: absent  # sidecar invoke anchor
-  vllm/gemma-a4b-awq:
-    compose_path: models/gemma-4-26b-a4b/vllm/compose/dual/awq/bf16.yml
-    genesis_equipped: false
-    genesis_equipped_evidence: no GENESIS_* token in compose and kv_format is not turboquant*
-    compose_service_template:
-      source: models/gemma-4-26b-a4b/vllm/compose/dual/awq/bf16.yml  # whole service definition captured verbatim from this file
-      param_slots:
-        ports: { source: E.default_port, value: 8042 }
-        tensor_parallel_size: { token: '${TP}', source: E.tp, value: 2 }
-        max_model_len: { token: '${MAX_MODEL_LEN}', source: E.max_ctx, value: 32768 }
-        gpu_memory_utilization: { token: '${GPU_MEMORY_UTILIZATION}', source: E.mem_util, value: 0.92 }
-        kv_cache_dtype: { token: '${KV_CACHE_DTYPE}', source: 'kv_arg(E.kv_format)', kv_format: bf16, value: null }
-        max_num_seqs: { token: '--max-num-seqs', source: E.max_num_seqs, value: 256 }
-        speculative_config: omitted  # E.drafter is None -> --speculative-config not emitted
-      governed_slots:
-        trust_remote_code:
-          token: '--trust-remote-code'
-          present_in_shipped_compose: true
-          policy: governed   # locked design v6 §88 security model
-          emit_rule: 'only if arch trc gate resolves evidence-cited false-permitted; never blind-passthrough'
-      constants:
-        image: '${VLLM_IMAGE:-vllm/vllm-openai:nightly-${VLLM_NIGHTLY_SHA}}'   # captured constant; engine pin flows via env, NOT rewritten
-        verbatim_from_compose: [shm_size, ipc, deploy.resources, model_cache_volume, base_environment, base_entrypoint, '--model', '--served-model-name', '--quantization', '--dtype', '--tool-call-parser', '--chat-template', '--reasoning-parser', '--default-chat-template-kwargs', '--enable-prefix-caching', '--enable-chunked-prefill', '--enforce-eager']
-      insertion_points:
-        volumes: present    # overlay/sidecar mount anchor
-        entrypoint: present  # sidecar invoke anchor
-  vllm/gemma-a4b-awq-mtp:
+  vllm/gemma-26ba4b-dual:
     compose_path: models/gemma-4-26b-a4b/vllm/compose/dual/awq/mtp.yml
     genesis_equipped: false
     genesis_equipped_evidence: no GENESIS_* token in compose and kv_format is not turboquant*
     compose_service_template:
       source: models/gemma-4-26b-a4b/vllm/compose/dual/awq/mtp.yml  # whole service definition captured verbatim from this file
       param_slots:
-        ports: { source: E.default_port, value: 8043 }
+        ports: { source: E.default_port, value: 8041 }
         tensor_parallel_size: { token: '${TP}', source: E.tp, value: 2 }
         max_model_len: { token: '${MAX_MODEL_LEN}', source: E.max_ctx, value: 32768 }
         gpu_memory_utilization: { token: '${GPU_MEMORY_UTILIZATION}', source: E.mem_util, value: 0.92 }
@@ -739,11 +687,11 @@ profiles:
           policy: governed   # locked design v6 §88 security model
           emit_rule: 'only if arch trc gate resolves evidence-cited false-permitted; never blind-passthrough'
       constants:
-        image: '${VLLM_IMAGE:-vllm/vllm-openai:nightly-${VLLM_NIGHTLY_SHA}}'   # captured constant; engine pin flows via env, NOT rewritten
+        image: '${VLLM_IMAGE:-vllm/vllm-openai:v0.22.0}'   # captured constant; engine pin flows via env, NOT rewritten
         verbatim_from_compose: [shm_size, ipc, deploy.resources, model_cache_volume, base_environment, base_entrypoint, '--model', '--served-model-name', '--quantization', '--dtype', '--tool-call-parser', '--chat-template', '--reasoning-parser', '--default-chat-template-kwargs', '--enable-prefix-caching', '--enable-chunked-prefill', '--enforce-eager']
       insertion_points:
         volumes: present    # overlay/sidecar mount anchor
-        entrypoint: present  # sidecar invoke anchor
+        entrypoint: absent  # sidecar invoke anchor (#40886 install entrypoint dropped — AWQ keys native in v0.22.0)
   vllm/qwen-a3b-preview-single:
     compose_path: models/qwen3.6-35b-a3b/vllm/compose/single/autoround-int4/preview.yml
     genesis_equipped: false

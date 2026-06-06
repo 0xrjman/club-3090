@@ -518,15 +518,12 @@ patches:
     status: verified
 
   - id: gemma-a4b-vllm-pr40886-awq-moe-keys
+    deprecated_on: "2026-06-06"
+    deprecation_reason: "AWQ compressed-tensors MoE key remap is in stock v0.22.0; gemma-4-26b-a4b AWQ now serves overlay-free (#326). Compose mounts removed."
     model: [gemma-4-26b-a4b]
     files:
       - models/gemma-4-26b-a4b/vllm/patches/vllm-pr40886-awq-moe-keys
-    load_bearing_when:
-      - composes:
-          - vllm/gemma-a4b-awq
-          - vllm/gemma-a4b-awq-mtp
-        reason: "Remaps compressed-tensors AWQ MoE expert keys so Gemma 4 26B-A4B AWQ loads."
-        evidence: "models/gemma-4-26b-a4b/vllm/patches/vllm-pr40886-awq-moe-keys/README.md; BENCHMARKS.md#moe-models"
+    load_bearing_when: []
     delivery:               # DEPRECATED/READ-ONLY (test-only) — see header
       dockerfile_bake: false
       entrypoint_invoke: true

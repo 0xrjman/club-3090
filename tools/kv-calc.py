@@ -255,7 +255,7 @@ COMPOSE_ALIAS_TEXT = {
     # an explicit --model, and the reverse map is keyed by (unique) registry
     # slug. `gemma-dual` → the MTP dual; `gemma-no-mtp` → the no-drafter dual.
     "gemma-4-12b": "gemma-dual=vllm/gemma-12b-dual-bf16-mtp gemma-single-int8-mtp=vllm/gemma-12b-single-int8-mtp",
-    "gemma-4-26b-a4b": "gemma-a4b-single=vllm/gemma-a4b-single gemma-a4b=vllm/gemma-a4b gemma-a4b-awq=vllm/gemma-a4b-awq gemma-a4b-awq-mtp=vllm/gemma-a4b-awq-mtp",
+    "gemma-4-26b-a4b": "gemma-26ba4b-single=vllm/gemma-26ba4b-single gemma-26ba4b-dual=vllm/gemma-26ba4b-dual",
 }
 COMPOSE_ALIASES = {model: tuple(part.split("=", 1) for part in text.split()) for model, text in COMPOSE_ALIAS_TEXT.items()}
 

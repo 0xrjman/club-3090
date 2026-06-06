@@ -10,6 +10,7 @@ min_sm: 7.5
 supported_model_families:
   - dense
   - gemma4-swa-dense
+  - gemma4-swa-moe
   - qwen3-next-hybrid
   - qwen3-next-moe
 features:
