@@ -143,6 +143,18 @@ weights:
     engine: beellama
     kind: gguf
     verify_glob: "*.gguf"
+  unsloth-q4km-mtp:
+    path: qwen3.6-27b-gguf/unsloth-mtp-q4km
+    local_subdir: qwen3.6-27b-gguf/unsloth-mtp-q4km
+    size_gb: 17.1
+    format: gguf
+    status: experimental
+    hf_repo: unsloth/Qwen3.6-27B-MTP-GGUF
+    files:
+      - Qwen3.6-27B-Q4_K_M.gguf
+    engine: beellama
+    kind: gguf
+    verify_glob: "*.gguf"
   beellama-q8kxl-mtp:
     path: qwen3.6-27b-gguf/unsloth-mtp-q8kxl
     local_subdir: qwen3.6-27b-gguf/unsloth-mtp-q8kxl
