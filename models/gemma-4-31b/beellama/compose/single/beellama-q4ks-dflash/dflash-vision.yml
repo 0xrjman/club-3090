@@ -62,7 +62,7 @@ services:
       --top-p ${TOP_P:-0.95}
       --min-p ${MIN_P:-0.0}
       --no-mmap
-# --spec-draft-ngl ${NGL:-999}
+      --spec-draft-ngl ${NGL:-999}
     deploy:
       resources:
         reservations:
